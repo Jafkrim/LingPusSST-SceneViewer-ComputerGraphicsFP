@@ -108,7 +108,7 @@ src/rendering/
 │   ├── baseRenderStyle.js    # Base contract (activate, deactivate, render, update) implemented by all render modes.
 │   ├── nprStyle.js           # Non-Photorealistic Rendering (NPR) mode using cel-shaded materials, crisp shadows, and ink outlines.
 │   ├── prStyle.js            # Photorealistic mode using PBR materials, tone mapping, soft shadows, IBL, and post-processing.
-│   └── viewModeStyle.js      # Diagnostic inspection modes (Wireframe, Unlit, Lighting-Only, Reflections, Normals, and Ambient Occlusion).
+│   └── viewModeStyle.js      # Diagnostic modes (Lit, Unlit, Wireframe [X-Ray/Opaque], Lighting, Reflection, Collision, and G-buffers).
 └── renderPipeline.js         # Manages the WebGL renderer and effect composer, executing the active render style and resize updates.
 ```
 
