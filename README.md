@@ -60,7 +60,72 @@ public/
 │       └── textures/      # Surface material maps (.png, .jpg, .webp)
 └── userContent/           # Create custom pack folders here following the starterPack hierarchy above
 ```
-### 3. Application Source Code (`src/`)
+
+### 3. UI Theme Token Contract (`src/ui/themes/`)
+All HUD panels in `src/ui/panels/` must reference CSS custom properties defined in `src/root/style.css` and dynamically overridden by `ThemeManager` (`builtInDark.js`, `builtInWhite.js`, or custom `.json` theme packs) rather than hardcoding hex or RGB colors.
+
+#### Color Tokens (Overridden by Themes)
+| Category | Token | Purpose & UI Panel Usage | `builtInDark` | `builtInWhite` |
+| :--- | :--- | :--- | :---: | :---: |
+| **Surfaces** | `--bg-viewport` | Fallback page backdrop & WebGL `scene.background` sync (`SceneManager`) | `#1d1d1d` | `#e5e7eb` |
+| | `--bg-panel` | Floating panel containers (`StatsPanel`, `InspectorPanel`, `RenderPanel`, `ContentBrowserPanel`) | `#2b2b2b` | `#f3f4f6` |
+| | `--bg-panel-header` | Collapsible panel title bars, section headers, and tab strips | `#232323` | `#e5e7eb` |
+| | `--bg-input` | Text fields, numeric scrubbers, dropdowns, search bars, and sliders | `#383838` | `#ffffff` |
+| | `--bg-hover` | Hover highlight for buttons, list rows, asset thumbnails, and tree items | `#474747` | `#d1d5db` |
+| | `--bg-overlay` | Backdrop dimming for theme installer or scene export modal dialogs | `rgba(0, 0, 0, 0.55)` | `rgba(15, 23, 42, 0.35)` |
+| **Borders** | `--border-subtle` | Outer panel borders and internal section dividers | `#181818` | `#cbd5e1` |
+| | `--border-widget` | Interactive control borders (buttons, inputs, dropdowns, checkboxes) | `#444444` | `#94a3b8` |
+| **Text** | `--text-primary` | Primary labels, active values, and panel titles | `#e6e6e6` | `#111827` |
+| | `--text-secondary` | Property labels, inactive tabs, and secondary metadata | `#a6a6a6` | `#4b5563` |
+| | `--text-muted` | Disabled options, placeholder text, and low-priority hardware telemetry | `#737373` | `#6b7280` |
+| | `--text-on-accent` | High-contrast text and icons rendered inside active `--accent-primary` buttons | `#ffffff` | `#ffffff` |
+| **Accents** | `--accent-primary` | Active tool buttons, selected hierarchy rows, and slider fills | `#4772b3` | `#2563eb` |
+| | `--accent-primary-hover` | Hover state for primary accent buttons and active toggles | `#5680c2` | `#1d4ed8` |
+| **Semantic** | `--status-warning` | Integrated GPU / high draw-call performance warnings (`StatsPanel`) | `#d9822b` | `#d97706` |
+| | `--status-danger` | Destructive actions (delete mesh, uninstall theme) and invalid JSON alerts | `#e04f5f` | `#dc2626` |
+| **3D Axes** | `--axis-x` | X-axis transform badge & gizmo indicator (`InspectorPanel`) | `#ff3352` | `#dc2626` |
+| | `--axis-y` | Y-axis transform badge & gizmo indicator (`InspectorPanel`) | `#8bdc00` | `#16a34a` |
+| | `--axis-z` | Z-axis transform badge & gizmo indicator (`InspectorPanel`) | `#2890ff` | `#2563eb` |
+
+#### Layout & Typography Tokens (Static Across Themes)
+| Token | Purpose & UI Panel Usage | Default Value |
+| :--- | :--- | :--- |
+| `--radius-sm` | Compact corners on inputs, badges, and small buttons | `3px` |
+| `--radius-md` | Outer corners on floating HUD panels and modal dialogs | `4px` |
+| `--font-ui` | Standard interface labels, headers, and buttons | `system-ui, -apple-system, 'Segoe UI', sans-serif` |
+| `--font-mono` | Numeric coordinates, hex IDs, shader info, and performance counters | `ui-monospace, 'Cascadia Code', Consolas, monospace` |
+
+#### Custom JSON Theme Schema
+Users can install external themes at runtime via `themeManager.install(json)` using this structure:
+```json
+{
+   "id": "custom-theme-id",
+   "name": "Custom Theme Name",
+   "tokens": {
+      "--bg-viewport": "#1d1d1d",
+      "--bg-panel": "#2b2b2b",
+      "--bg-panel-header": "#232323",
+      "--bg-input": "#383838",
+      "--bg-hover": "#474747",
+      "--bg-overlay": "rgba(0, 0, 0, 0.55)",
+      "--border-subtle": "#181818",
+      "--border-widget": "#444444",
+      "--text-primary": "#e6e6e6",
+      "--text-secondary": "#a6a6a6",
+      "--text-muted": "#737373",
+      "--text-on-accent": "#ffffff",
+      "--accent-primary": "#4772b3",
+      "--accent-primary-hover": "#5680c2",
+      "--status-warning": "#d9822b",
+      "--status-danger": "#e04f5f",
+      "--axis-x": "#ff3352",
+      "--axis-y": "#8bdc00",
+      "--axis-z": "#2890ff"
+   }
+}
+```
+
+### 4. Application Source Code (`src/`)
 
 #### Core Engine (`src/engine/`)
 Core framework systems decoupled from rendering styles and UI components:
@@ -139,7 +204,11 @@ src/ui/
 │   ├── inspectorPanel.js        # Displays and edits transform values, mesh statistics, and material properties of the selected object.
 │   ├── renderPanel.js           # Provides controls for switching render styles, adjusting time of day, toggling passes, and exporting scenes.
 │   └── statsPanel.js            # Displays real-time FPS, frame time, draw calls, and active triangle counts.
-└── uiManager.js                 # Mounts HUD panels and connects user interface interactions to eventBus.
+├── themes/                      # Modular UI theme palettes and runtime installer
+│   ├── builtInDark.js           # Built-in dark slate CSS token palette.
+│   ├── builtInWhite.js          # Built-in high-contrast light/white CSS token palette.
+│   └── themeManager.js          # Applies, switches, installs, and uninstalls custom JSON UI themes via CSS variables.
+└── uiManager.js                 # Mounts HUD panels, initializes ThemeManager, and connects UI interactions to eventBus.
 ```
 
 #### Shared Utilities (`src/utils/`)
@@ -157,3 +226,79 @@ src/world/
 ├── sceneSerializer.js  # Saves and loads scene configurations (object transforms, asset paths, render style, and time of day) as .scene.json.
 └── spatialIndex.js     # Builds BVH acceleration structures on loaded meshes for fast raycasting, snapping, and collision queries.
 ```
+## Development Progress
+
+### Application Source Code (`src/`)
+**Overall Progress:** `15 / 47` (**31.91%**)
+
+| Module | Completed | Total | Progress |
+| :--- | :---: | :---: | :---: |
+| `src/engine/` | 2 | 5 | **40.00%** |
+| `src/pawn/` | 1 | 5 | **20.00%** |
+| `src/rendering/` | 3 | 17 | **17.64%** |
+| `src/root/` | 3 | 3 | **100.00%** |
+| `src/tools/` | 0 | 4 | **0.00%** |
+| `src/ui/` | 5 | 8 | **62.50%** |
+| `src/utils/` | 0 | 2 | **0.00%** |
+| `src/world/` | 1 | 3 | **33.33%** |
+
+#### File Implementation & Task Assignment
+| File Path | Assigned NRP | Status |
+| :--- | :---: | :---: |
+| `src/engine/assetResolver.js` | `TBD` | Pending |
+| `src/engine/engine.js` | `5025241040` | Done |
+| `src/engine/eventBus.js` | `5025241040` | Done |
+| `src/engine/inputManager.js` | `TBD` | Pending |
+| `src/engine/resourceTracker.js` | `TBD` | Pending |
+| `src/pawn/controllers/baseController.js` | `TBD` | Pending |
+| `src/pawn/controllers/droneController.js` | `TBD` | Pending |
+| `src/pawn/controllers/orbitController.js` | `TBD` | Pending |
+| `src/pawn/controllers/walkController.js` | `TBD` | Pending |
+| `src/pawn/pawnManager.js` | `5025241040` | Done |
+| `src/rendering/lighting/lightingRig.js` | `TBD` | Pending |
+| `src/rendering/lighting/skyboxSystem.js` | `TBD` | Pending |
+| `src/rendering/lighting/timeOfDaySystem.js` | `TBD` | Pending |
+| `src/rendering/passes/basePass.js` | `TBD` | Pending |
+| `src/rendering/passes/debugBufferPass.js` | `TBD` | Pending 
+| `src/rendering/passes/outlinePass.js` | `TBD` | Pending |
+| `src/rendering/passes/postProcessPass.js` | `TBD` | Pending |
+| `src/rendering/passes/scenePass.js` | `TBD` | Pending |
+| `src/rendering/shaders/npr/nprMaterial.js` | `TBD` | Pending |
+| `src/rendering/shaders/npr/toon.frag` | `TBD` | Pending |
+| `src/rendering/shaders/npr/toon.vert` | `TBD` | Pending |
+| `src/rendering/shaders/shaderRegistry.js` | `TBD` | Pending |
+| `src/rendering/styles/baseRenderStyle.js` | `5025241040` | Done |
+| `src/rendering/styles/nprStyle.js` | `TBD` | Pending |
+| `src/rendering/styles/prStyle.js` | `5025241040` | Done |
+| `src/rendering/styles/viewModeStyle.js` | `TBD` | Pending |
+| `src/rendering/renderPipeline.js` | `5025241040` | Done |
+| `src/root/index.html` | `5025241040` | Done |
+| `src/root/main.js` | `5025241040` | Done |
+| `src/root/style.css` | `5025241040` | Done |
+| `src/tools/measurementTool.js` | `TBD` | Pending |
+| `src/tools/placementTool.js` | `TBD` | Pending |
+| `src/tools/sectionCutTool.js` | `TBD` | Pending |
+| `src/tools/selectionTool.js` | `TBD` | Pending |
+| `src/ui/panels/contentBrowserPanel.js` | `TBD` | Pending |
+| `src/ui/panels/inspectorPanel.js` | `TBD` | Pending |
+| `src/ui/panels/renderPanel.js` | `TBD` | Pending |
+| `src/ui/panels/statsPanel.js` | `5025241040` | Done |
+| `src/ui/themes/builtInDark.js` | `5025241040` | Done |
+| `src/ui/themes/builtInWhite.js` | `5025241040` | Done |
+| `src/ui/themes/themeManager.js` | `5025241040` | Done |
+| `src/ui/uiManager.js` | `5025241040` | Done |
+| `src/utils/disposal.js` | `TBD` | Pending |
+| `src/utils/math.js` | `TBD` | Pending |
+| `src/world/sceneManager.js` | `5025241040` | Done |
+| `src/world/sceneSerializer.js` | `TBD` | Pending |
+| `src/world/spatialIndex.js` | `TBD` | Pending |
+
+### Engine Content (`public/engineContent/`)
+**Overall Progress:** `0 / 4` (**0.00%**)
+
+| Directory | Assigned NRP | Status |
+| :--- | :---: | :---: |
+| `public/engineContent/starterPack/environments/` | `TBD` | Pending |
+| `public/engineContent/starterPack/meshes/` | `TBD` | Pending |
+| `public/engineContent/starterPack/scenes/` | `TBD` | Pending |
+| `public/engineContent/starterPack/textures/` | `TBD` | Pending |
