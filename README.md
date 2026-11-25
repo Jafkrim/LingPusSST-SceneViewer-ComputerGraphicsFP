@@ -1,7 +1,7 @@
 # LingPusSST's Scene Viewer
-A Three.js scene viewer built for the Computer Graphics final project.
+A Three.js scene viewer built for the Computer Graphics C (2026) final project.
 
-## Team - LingPusSST
+## Team 8 - LingPusSST
 | NRP | Member Name |
 | :--- | :--- |
 | 5025241040 | Ja'far Balyan Al Karim |
