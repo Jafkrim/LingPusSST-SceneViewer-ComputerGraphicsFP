@@ -153,28 +153,34 @@ src/pawn/
 Manages WebGL rendering, visual styles, post-processing, lighting, and shaders:
 ```text
 src/rendering/
-├── lighting/                 # Illumination, skyboxes, and diurnal cycle
-│   ├── lightingRig.js        # Manages directional sun/moon lights, ambient fill, and shadow maps.
-│   ├── skyboxSystem.js       # Loads HDR environment maps for sky rendering and image-based lighting reflections.
-│   └── timeOfDaySystem.js    # Simulates a 24-hour sun cycle, updating sun elevation, light color, and sky gradients.
-├── passes/                   # Modular post-processing and buffer passes
-│   ├── basePass.js           # Base interface (setup, render, resize, dispose) for render passes.
-│   ├── debugBufferPass.js    # Displays raw render buffers (depth, normals, ambient occlusion) directly in the viewport.
-│   ├── outlinePass.js        # Edge-detection pass generating screen-space ink outlines for nprStyle.
-│   ├── postProcessPass.js    # Applies final post-processing effects such as bloom, tone mapping, and anti-aliasing.
-│   └── scenePass.js          # Renders the primary 3D scene color and depth buffers.
-├── shaders/                  # Custom GLSL shaders and uniform synchronization
-│   ├── npr/                  # Non-Photorealistic Rendering (cel-shading) materials and GLSL shader programs
-│   │   ├── nprMaterial.js    # Builds cel-shaded materials while preserving original model base color and normal maps.
-│   │   ├── toon.frag         # Fragment shader computing quantized diffuse light bands, specular steps, and rim highlights.
-│   │   └── toon.vert         # Vertex shader preparing surface normals and view directions for toon shading.
-│   └── shaderRegistry.js     # Synchronizes global uniforms (uTime, uLightDir, uCameraPos) across custom materials.
-├── styles/                   # Swappable visual rendering modes
-│   ├── baseRenderStyle.js    # Base contract (activate, deactivate, render, update) implemented by all render modes.
-│   ├── nprStyle.js           # Non-Photorealistic Rendering (NPR) mode using cel-shaded materials, crisp shadows, and ink outlines.
-│   ├── prStyle.js            # Photorealistic mode using PBR materials, tone mapping, soft shadows, IBL, and post-processing.
-│   └── viewModeStyle.js      # Diagnostic modes (Lit, Unlit, Wireframe [X-Ray/Opaque], Lighting, Reflection, Collision, and G-buffers).
-└── renderPipeline.js         # Manages the WebGL renderer and effect composer, executing the active render style and resize updates.
+├── lighting/                          # Illumination, skyboxes, and diurnal cycle
+│   ├── globalIlluminationSystem.js    # Manages real-time indirect bounce lighting via light probes or screen-space GI.
+│   ├── lightingRig.js                 # Manages directional sun/moon lights, ambient fill, and shadow maps.
+│   ├── reflectionProbeSystem.js       # Manages local real-time cubemap reflections and planar mirror/puddle reflectors.
+│   ├── skyboxSystem.js                # Loads HDR environment maps, IBL reflections, and procedural aurora sky domes.
+│   └── timeOfDaySystem.js             # Simulates astronomical sun/moon position from coordinates and date/time, updating light color and sky gradients.
+├── passes/                            # Modular post-processing and buffer passes
+│   ├── basePass.js                    # Base interface (setup, render, resize, dispose) for render passes.
+│   ├── debugBufferPass.js             # Displays raw render buffers (depth, normals, ambient occlusion) directly in the viewport.
+│   ├── outlinePass.js                 # Edge-detection pass generating screen-space ink outlines for nprStyle.
+│   ├── postProcessPass.js             # Applies final post-processing effects such as bloom, tone mapping, and anti-aliasing.
+│   └── scenePass.js                   # Renders the primary 3D scene color and depth buffers.
+├── shaders/                           # Custom GLSL shaders and uniform synchronization
+│   ├── npr/                           # Non-Photorealistic Rendering (cel-shading) materials and GLSL shader programs
+│   │   ├── nprMaterial.js             # Builds cel-shaded materials while preserving original model base color and normal maps.
+│   │   ├── toon.frag                  # Fragment shader computing quantized diffuse light bands, specular steps, and rim highlights.
+│   │   └── toon.vert                  # Vertex shader preparing surface normals and view directions for toon shading.
+│   └── shaderRegistry.js              # Synchronizes global uniforms (uTime, uLightDir, uCameraPos, wind, wetness) across custom materials.
+├── styles/                            # Swappable visual rendering modes
+│   ├── baseRenderStyle.js             # Base contract (activate, deactivate, render, update) implemented by all render modes.
+│   ├── nprStyle.js                    # Non-Photorealistic Rendering (NPR) mode using cel-shaded materials, crisp shadows, and ink outlines.
+│   ├── prStyle.js                     # Photorealistic mode using PBR materials, tone mapping, soft shadows, IBL, and post-processing.
+│   └── viewModeStyle.js               # Diagnostic modes (Lit, Unlit, Wireframe [X-Ray/Opaque], Lighting, Reflection, Collision, and G-buffers).
+├── weather/                           # Dynamic atmospheric weather, precipitation, and surface accumulation
+│   ├── lightningSystem.js             # Triggers procedural branching lightning bolts and directional storm flashes.
+│   ├── surfaceWeatherPatch.js         # Patches materials for rain puddles, wetness roughness, raindrop ripples, and upward-surface snow accumulation.
+│   └── weatherSystem.js               # Manages weather presets (clear, fog, rain, storm, snow, blizzard, dust), wind gusts, GPU precipitation, and aurora state.
+└── renderPipeline.js                  # Manages the WebGL renderer and effect composer, executing the active render style and resize updates.
 ```
 
 #### Entry Point (`src/root/`)
@@ -203,6 +209,7 @@ src/ui/
 │   ├── contentBrowserPanel.js   # Browses available engineContent/ and userContent/ assets alongside the active scene hierarchy.
 │   ├── inspectorPanel.js        # Displays and edits transform values, mesh statistics, and material properties of the selected object.
 │   ├── renderPanel.js           # Provides controls for switching render styles, adjusting time of day, toggling passes, and exporting scenes.
+│   ├── settingsPanel.js         # Provides graphics quality presets, post-processing toggles, and customizable keybind settings.
 │   └── statsPanel.js            # Displays real-time FPS, frame time, draw calls, and active triangle counts.
 ├── themes/                      # Modular UI theme palettes and runtime installer
 │   ├── builtInDark.js           # Built-in dark slate CSS token palette.
@@ -216,7 +223,8 @@ Stateless helper functions reused across modules:
 ```text
 src/utils/
 ├── disposal.js   # Recursive cleanup helper for freeing Three.js geometries, materials, and textures from GPU memory.
-└── math.js       # Math utilities for clamping, interpolation, grid/nearest snapping, and solar angle calculations.
+├── math.js       # Math utilities for clamping, interpolation, grid/nearest snapping, and solar angle calculations.
+└── noise.js      # Deterministic 2D/3D procedural noise, fBm, and cellular ripple helpers for wind, puddles, snow, and auroras.
 ```
 
 #### Scene & Spatial Management (`src/world/`)
@@ -229,17 +237,17 @@ src/world/
 ## Development Progress
 
 ### Application Source Code (`src/`)
-**Overall Progress:** `15 / 47` (**31.91%**)
+**Overall Progress:** `15 / 54` (**27.77%**)
 
 | Module | Completed | Total | Progress |
 | :--- | :---: | :---: | :---: |
 | `src/engine/` | 2 | 5 | **40.00%** |
 | `src/pawn/` | 1 | 5 | **20.00%** |
-| `src/rendering/` | 3 | 17 | **17.64%** |
+| `src/rendering/` | 3 | 22 | **13.63%** |
 | `src/root/` | 3 | 3 | **100.00%** |
 | `src/tools/` | 0 | 4 | **0.00%** |
-| `src/ui/` | 5 | 8 | **62.50%** |
-| `src/utils/` | 0 | 2 | **0.00%** |
+| `src/ui/` | 5 | 9 | **55.55%** |
+| `src/utils/` | 0 | 3 | **0.00%** |
 | `src/world/` | 1 | 3 | **33.33%** |
 
 #### File Implementation & Task Assignment
@@ -255,7 +263,9 @@ src/world/
 | `src/pawn/controllers/orbitController.js` | `TBD` | Pending |
 | `src/pawn/controllers/walkController.js` | `TBD` | Pending |
 | `src/pawn/pawnManager.js` | `5025241040` | Done |
+| `src/rendering/lighting/globalIlluminationSystem.js` | `TBD` | Pending |
 | `src/rendering/lighting/lightingRig.js` | `TBD` | Pending |
+| `src/rendering/lighting/reflectionProbeSystem.js` | `TBD` | Pending |
 | `src/rendering/lighting/skyboxSystem.js` | `TBD` | Pending |
 | `src/rendering/lighting/timeOfDaySystem.js` | `TBD` | Pending |
 | `src/rendering/passes/basePass.js` | `TBD` | Pending |
@@ -271,6 +281,9 @@ src/world/
 | `src/rendering/styles/nprStyle.js` | `TBD` | Pending |
 | `src/rendering/styles/prStyle.js` | `5025241040` | Done |
 | `src/rendering/styles/viewModeStyle.js` | `TBD` | Pending |
+| `src/rendering/weather/lightningSystem.js` | `TBD` | Pending |
+| `src/rendering/weather/surfaceWeatherPatch.js` | `TBD` | Pending |
+| `src/rendering/weather/weatherSystem.js` | `TBD` | Pending |
 | `src/rendering/renderPipeline.js` | `5025241040` | Done |
 | `src/root/index.html` | `5025241040` | Done |
 | `src/root/main.js` | `5025241040` | Done |
@@ -282,6 +295,7 @@ src/world/
 | `src/ui/panels/contentBrowserPanel.js` | `TBD` | Pending |
 | `src/ui/panels/inspectorPanel.js` | `TBD` | Pending |
 | `src/ui/panels/renderPanel.js` | `TBD` | Pending |
+| `src/ui/panels/settingsPanel.js` | `TBD` | Pending |
 | `src/ui/panels/statsPanel.js` | `5025241040` | Done |
 | `src/ui/themes/builtInDark.js` | `5025241040` | Done |
 | `src/ui/themes/builtInWhite.js` | `5025241040` | Done |
@@ -289,6 +303,7 @@ src/world/
 | `src/ui/uiManager.js` | `5025241040` | Done |
 | `src/utils/disposal.js` | `TBD` | Pending |
 | `src/utils/math.js` | `TBD` | Pending |
+| `src/utils/noise.js` | `TBD` | Pending |
 | `src/world/sceneManager.js` | `5025241040` | Done |
 | `src/world/sceneSerializer.js` | `TBD` | Pending |
 | `src/world/spatialIndex.js` | `TBD` | Pending |
