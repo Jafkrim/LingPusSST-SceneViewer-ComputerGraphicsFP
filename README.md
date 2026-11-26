@@ -56,6 +56,7 @@ public/
 │   └── starterPack/       # Built-in default pack & blueprint template for custom user packs
 │       ├── environments/  # Skybox HDRIs & Image-Based Lighting maps (.hdr, .exr)
 │       ├── meshes/        # Placeable 3D models (.glb, .gltf)
+│       ├── prefabs/       # Reusable multi-mesh groups & furniture sets (.prefab.json)
 │       ├── scenes/        # Saved scene layouts & lighting presets (.scene.json)
 │       └── textures/      # Surface material maps (.png, .jpg, .webp)
 └── userContent/           # Create custom pack folders here following the starterPack hierarchy above
@@ -315,5 +316,6 @@ src/world/
 | :--- | :---: | :---: |
 | `public/engineContent/starterPack/environments/` | `TBD` | Pending |
 | `public/engineContent/starterPack/meshes/` | `TBD` | Pending |
+| `public/engineContent/starterPack/prefabs/` | `TBD` | Pending |
 | `public/engineContent/starterPack/scenes/` | `TBD` | Pending |
 | `public/engineContent/starterPack/textures/` | `TBD` | Pending |
