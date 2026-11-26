@@ -5,6 +5,7 @@ import { PawnManager } from '@/pawn/pawnManager.js';
 import { LightingRig } from '@/rendering/lighting/lightingRig.js';
 import { RenderPipeline } from '@/rendering/renderPipeline.js';
 import { UiManager } from '@/ui/uiManager.js';
+import { ViewportGuides } from '@/rendering/viewportGuides.js';
 
 const canvas = document.getElementById('viewport');
 const hudRoot = document.getElementById('hud-root');
@@ -25,6 +26,7 @@ const pawnManager = engine.register(
 
 // 2. WebGL Renderer, Lighting & Visual Styles
 engine.register('lightingRig', new LightingRig(sceneManager.scene, engine.eventBus));
+engine.register('viewportGuides', new ViewportGuides(sceneManager.scene, engine.eventBus));
 
 const renderPipeline = engine.register(
   'renderPipeline',
@@ -32,8 +34,15 @@ const renderPipeline = engine.register(
 );
 
 // 3. DOM HUD Overlay & Theme Engine
-engine.register('uiManager', new UiManager(hudRoot, engine.eventBus, renderPipeline));
+const uiManager = engine.register('uiManager', new UiManager(hudRoot, engine.eventBus, renderPipeline));
 
 // 4. Load Default Calibration World & Start Main Loop
 await sceneSerializer.loadFromUrl('/engineContent/starterPack/scenes/basicShapeTest.scene.json');
 engine.start();
+
+// TEMP: Press 'T' to cycle through all discovered themes
+window.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() === 't' && !e.repeat) {
+    uiManager.themeManager.cycle();
+  }
+});

@@ -11,7 +11,10 @@ export const EVENTS = {
   RENDER_FLAG_CHANGED: 'render:flag',
   TIME_OF_DAY_CHANGED: 'time:changed',
   PAWN_CHANGED: 'pawn:changed',
-  THEME_CHANGED: 'theme:changed'
+  THEME_CHANGED: 'theme:changed',
+  VIEWPORT_TOGGLE_GRID: 'viewport:toggleGrid',
+  VIEWPORT_TOGGLE_AXES: 'viewport:toggleAxes',
+  VIEWPORT_SET_GRID_STYLE: 'viewport:setGridStyle'
 };
 
 export class EventBus {

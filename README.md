@@ -63,7 +63,7 @@ public/
 ```
 
 ### 3. UI Theme Token Contract (`src/ui/themes/`)
-All HUD panels in `src/ui/panels/` must reference CSS custom properties defined in `src/root/style.css` and dynamically overridden by `ThemeManager` (`builtInDark.js`, `builtInWhite.js`, or custom `.json` theme packs) rather than hardcoding hex or RGB colors.
+All HUD panels in `src/ui/panels/` must reference CSS custom properties defined in `src/root/style.css` and dynamically overridden by `ThemeManager` (`builtInDark.js`, `builtInWhite.js`, or any auto-discovered `.js` / `.json` theme file) rather than hardcoding hex or RGB colors.
 
 #### Color Tokens (Overridden by Themes)
 | Category | Token | Purpose & UI Panel Usage | `builtInDark` | `builtInWhite` |
@@ -84,9 +84,15 @@ All HUD panels in `src/ui/panels/` must reference CSS custom properties defined 
 | | `--accent-primary-hover` | Hover state for primary accent buttons and active toggles | `#5680c2` | `#1d4ed8` |
 | **Semantic** | `--status-warning` | Integrated GPU / high draw-call performance warnings (`StatsPanel`) | `#d9822b` | `#d97706` |
 | | `--status-danger` | Destructive actions (delete mesh, uninstall theme) and invalid JSON alerts | `#e04f5f` | `#dc2626` |
-| **3D Axes** | `--axis-x` | X-axis transform badge & gizmo indicator (`InspectorPanel`) | `#ff3352` | `#dc2626` |
-| | `--axis-y` | Y-axis transform badge & gizmo indicator (`InspectorPanel`) | `#8bdc00` | `#16a34a` |
-| | `--axis-z` | Z-axis transform badge & gizmo indicator (`InspectorPanel`) | `#2890ff` | `#2563eb` |
+| **3D Axes** | `--axis-x` | X-axis transform badge & gizmo indicator (`InspectorPanel`) | `#ff0000` | `#ff0000` |
+| | `--axis-y` | Y-axis transform badge & gizmo indicator (`InspectorPanel`) | `#00ff00` | `#00ff00` |
+| | `--axis-z` | Z-axis transform badge & gizmo indicator (`InspectorPanel`) | `#0000ff` | `#0000ff` |
+| **Viewport** | `--viewport-grid-minor` | Minor `1m` infinite grid subdivision lines (`ViewportGuides`) | `#525252` | `#cbd5e1` |
+| | `--viewport-grid-major` | Major `10m` infinite grid subdivision lines (`ViewportGuides`) | `#7a7a7a` | `#94a3b8` |
+| | `--viewport-grid-opacity` | Overall infinite grid and Y-axis opacity (`0.0` – `1.0`) | `0.8` | `0.8` |
+| | `--viewport-axis-x` | Infinite world X-axis floor line (`ViewportGuides`) | `#ff0000` | `#ff0000` |
+| | `--viewport-axis-y` | Infinite world Y-axis vertical line (`ViewportGuides`) | `#00ff00` | `#00ff00` |
+| | `--viewport-axis-z` | Infinite world Z-axis floor line (`ViewportGuides`) | `#0000ff` | `#0000ff` |
 
 #### Layout & Typography Tokens (Static Across Themes)
 | Token | Purpose & UI Panel Usage | Default Value |
@@ -97,7 +103,7 @@ All HUD panels in `src/ui/panels/` must reference CSS custom properties defined 
 | `--font-mono` | Numeric coordinates, hex IDs, shader info, and performance counters | `ui-monospace, 'Cascadia Code', Consolas, monospace` |
 
 #### Custom JSON Theme Schema
-Users can install external themes at runtime via `themeManager.install(json)` using this structure:
+Users can install external themes at runtime via `themeManager.install(json)` or drop `.json` / `.js` theme files into `src/ui/themes/` using this structure:
 ```json
 {
    "id": "custom-theme-id",
@@ -119,9 +125,15 @@ Users can install external themes at runtime via `themeManager.install(json)` us
       "--accent-primary-hover": "#5680c2",
       "--status-warning": "#d9822b",
       "--status-danger": "#e04f5f",
-      "--axis-x": "#ff3352",
-      "--axis-y": "#8bdc00",
-      "--axis-z": "#2890ff"
+      "--axis-x": "#ff0000",
+      "--axis-y": "#00ff00",
+      "--axis-z": "#0000ff",
+      "--viewport-grid-minor": "#525252",
+      "--viewport-grid-major": "#7a7a7a",
+      "--viewport-grid-opacity": "1",
+      "--viewport-axis-x": "#ff0000",
+      "--viewport-axis-y": "#00ff00",
+      "--viewport-axis-z": "#0000ff"
    }
 }
 ```
@@ -181,7 +193,8 @@ src/rendering/
 │   ├── lightningSystem.js             # Triggers procedural branching lightning bolts and directional storm flashes.
 │   ├── surfaceWeatherPatch.js         # Patches materials for rain puddles, wetness roughness, raindrop ripples, and upward-surface snow accumulation.
 │   └── weatherSystem.js               # Manages weather presets (clear, fog, rain, storm, snow, blizzard, dust), wind gusts, GPU precipitation, and aurora state.
-└── renderPipeline.js                  # Manages the WebGL renderer and effect composer, executing the active render style and resize updates.
+├── renderPipeline.js                  # Manages the WebGL renderer and effect composer, executing the active render style and resize updates.
+└── viewportGuides.js                  # Renders the infinite shader-based viewport floor grid and world XYZ axes excluded from scene saves.
 ```
 
 #### Entry Point (`src/root/`)
@@ -215,7 +228,7 @@ src/ui/
 ├── themes/                      # Modular UI theme palettes and runtime installer
 │   ├── builtInDark.js           # Built-in dark slate CSS token palette.
 │   ├── builtInWhite.js          # Built-in high-contrast light/white CSS token palette.
-│   └── themeManager.js          # Applies, switches, installs, and uninstalls custom JSON UI themes via CSS variables.
+│   └── themeManager.js          # Auto-discovers, applies, switches, installs, and uninstalls custom JSON/JS UI themes via CSS variables.
 └── uiManager.js                 # Mounts HUD panels, initializes ThemeManager, and connects UI interactions to eventBus.
 ```
 
@@ -238,13 +251,13 @@ src/world/
 ## Development Progress
 
 ### Application Source Code (`src/`)
-**Overall Progress:** `0 / 54` (**0.00%**)
+**Overall Progress:** `0 / 55` (**0.00%**)
 
 | Module | Completed | Total | Progress |
 | :--- | :---: | :---: | :---: |
 | `src/engine/` | 0 | 5 | **0.00%** |
 | `src/pawn/` | 0 | 5 | **0.00%** |
-| `src/rendering/` | 0 | 22 | **0.00%** |
+| `src/rendering/` | 0 | 23 | **0.00%** |
 | `src/root/` | 0 | 3 | **0.00%** |
 | `src/tools/` | 0 | 4 | **0.00%** |
 | `src/ui/` | 0 | 9 | **0.00%** |
@@ -286,6 +299,7 @@ src/world/
 | `src/rendering/weather/surfaceWeatherPatch.js` | `TBD` | Pending |
 | `src/rendering/weather/weatherSystem.js` | `TBD` | Pending |
 | `src/rendering/renderPipeline.js` | `5025241040` | WIP |
+| `src/rendering/viewportGuides.js` | `5025241040` | WIP |
 | `src/root/index.html` | `5025241040` | WIP |
 | `src/root/main.js` | `5025241040` | WIP |
 | `src/root/style.css` | `5025241040` | WIP |

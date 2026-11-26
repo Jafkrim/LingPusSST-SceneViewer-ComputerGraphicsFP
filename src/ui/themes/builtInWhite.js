@@ -30,8 +30,16 @@ export const builtInWhite = {
     '--status-danger': '#dc2626',
 
     // 3D Gizmo & Transform Axes
-    '--axis-x': '#dc2626',
-    '--axis-y': '#16a34a',
-    '--axis-z': '#2563eb'
+    '--axis-x': '#ff0000',
+    '--axis-y': '#00ff00',
+    '--axis-z': '#0000ff',
+
+    // Viewport Grid & Axes:
+    '--viewport-grid-minor': '#cbd5e1',
+    '--viewport-grid-major': '#94a3b8',
+    '--viewport-grid-opacity': '0.8',
+    '--viewport-axis-x': '#ff0000',
+    '--viewport-axis-y': '#00ff00',
+    '--viewport-axis-z': '#0000ff'
   }
 };

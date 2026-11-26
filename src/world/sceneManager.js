@@ -9,14 +9,28 @@ export class SceneManager {
 
     const initialBg =
       getComputedStyle(document.documentElement).getPropertyValue('--bg-viewport').trim() || '#1d1d1d';
-    this.scene.background = new THREE.Color(initialBg);
+    this._fallbackBg = new THREE.Color(initialBg);
+    this.scene.background = this._fallbackBg;
 
     this.eventBus.on(EVENTS.THEME_CHANGED, (theme) => {
       const bg = theme?.tokens?.['--bg-viewport'];
-      if (bg) {
-        this.scene.background.set(bg);
+      if (!bg) return;
+
+      this._fallbackBg.set(bg);
+
+      // Only apply theme color when no HDR/skybox texture is active
+      if (this.scene.background instanceof THREE.Color) {
+        this.scene.background = this._fallbackBg;
       }
     });
+  }
+
+  setSkybox(texture) {
+    if (texture) {
+      this.scene.background = texture;
+    } else {
+      this.scene.background = this._fallbackBg;
+    }
   }
 
   addObject(id, object3D) {

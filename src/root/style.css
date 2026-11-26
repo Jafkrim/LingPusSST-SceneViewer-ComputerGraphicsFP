@@ -26,9 +26,17 @@
   --status-danger: #e04f5f;
 
   /* 3D Gizmo & Transform Axes */
-  --axis-x: #ff3352;
-  --axis-y: #8bdc00;
-  --axis-z: #2890ff;
+  --axis-x: #ff0000;
+  --axis-y: #00ff00;
+  --axis-z: #0000ff;
+
+  /* Viewport Grid & Axes */
+  --viewport-grid-minor: #525252;
+  --viewport-grid-major: #7a7a7a;
+  --viewport-grid-opacity: 0.8;
+  --viewport-axis-x: #ff0000;
+  --viewport-axis-y: #00ff00;
+  --viewport-axis-z: #0000ff;
 
   /* Theme-Independent Structural Metrics */
   --radius-sm: 3px;
