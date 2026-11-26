@@ -238,18 +238,18 @@ src/world/
 ## Development Progress
 
 ### Application Source Code (`src/`)
-**Overall Progress:** `15 / 54` (**27.77%**)
+**Overall Progress:** `17 / 54` (**31.48%**)
 
 | Module | Completed | Total | Progress |
 | :--- | :---: | :---: | :---: |
 | `src/engine/` | 2 | 5 | **40.00%** |
 | `src/pawn/` | 1 | 5 | **20.00%** |
-| `src/rendering/` | 3 | 22 | **13.63%** |
+| `src/rendering/` | 4 | 22 | **18.18%** |
 | `src/root/` | 3 | 3 | **100.00%** |
 | `src/tools/` | 0 | 4 | **0.00%** |
 | `src/ui/` | 5 | 9 | **55.55%** |
 | `src/utils/` | 0 | 3 | **0.00%** |
-| `src/world/` | 1 | 3 | **33.33%** |
+| `src/world/` | 2 | 3 | **66.66%** |
 
 #### File Implementation & Task Assignment
 | File Path | Assigned NRP | Status |
@@ -265,7 +265,7 @@ src/world/
 | `src/pawn/controllers/walkController.js` | `TBD` | Pending |
 | `src/pawn/pawnManager.js` | `5025241040` | Done |
 | `src/rendering/lighting/globalIlluminationSystem.js` | `TBD` | Pending |
-| `src/rendering/lighting/lightingRig.js` | `TBD` | Pending |
+| `src/rendering/lighting/lightingRig.js` | `5025241040` | WIP |
 | `src/rendering/lighting/reflectionProbeSystem.js` | `TBD` | Pending |
 | `src/rendering/lighting/skyboxSystem.js` | `TBD` | Pending |
 | `src/rendering/lighting/timeOfDaySystem.js` | `TBD` | Pending |
@@ -306,16 +306,16 @@ src/world/
 | `src/utils/math.js` | `TBD` | Pending |
 | `src/utils/noise.js` | `TBD` | Pending |
 | `src/world/sceneManager.js` | `5025241040` | Done |
-| `src/world/sceneSerializer.js` | `TBD` | Pending |
+| `src/world/sceneSerializer.js` | `5025241040` | WIP |
 | `src/world/spatialIndex.js` | `TBD` | Pending |
 
 ### Engine Content (`public/engineContent/`)
-**Overall Progress:** `0 / 4` (**0.00%**)
+**Overall Progress:** `1 / 5` (**20.00%**)
 
 | Directory | Assigned NRP | Status |
 | :--- | :---: | :---: |
 | `public/engineContent/starterPack/environments/` | `TBD` | Pending |
 | `public/engineContent/starterPack/meshes/` | `TBD` | Pending |
 | `public/engineContent/starterPack/prefabs/` | `TBD` | Pending |
-| `public/engineContent/starterPack/scenes/` | `TBD` | Pending |
+| `public/engineContent/starterPack/scenes/` | `5025241040` | WIP |
 | `public/engineContent/starterPack/textures/` | `TBD` | Pending |

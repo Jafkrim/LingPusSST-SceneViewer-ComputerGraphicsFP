@@ -1,6 +1,8 @@
 import { Engine } from '@/engine/engine.js';
 import { SceneManager } from '@/world/sceneManager.js';
+import { SceneSerializer } from '@/world/sceneSerializer.js';
 import { PawnManager } from '@/pawn/pawnManager.js';
+import { LightingRig } from '@/rendering/lighting/lightingRig.js';
 import { RenderPipeline } from '@/rendering/renderPipeline.js';
 import { UiManager } from '@/ui/uiManager.js';
 
@@ -11,19 +13,27 @@ const engine = new Engine(canvas);
 
 // 1. World & Camera
 const sceneManager = engine.register('sceneManager', new SceneManager(engine.eventBus));
-const pawnManager = engine.register(
-    'pawnManager',
-    new PawnManager(canvas, engine.eventBus, engine.width / engine.height)
+const sceneSerializer = engine.register(
+  'sceneSerializer',
+  new SceneSerializer({ sceneManager, assetResolver: null, eventBus: engine.eventBus })
 );
 
-// 2. WebGL Renderer & Visual Styles
+const pawnManager = engine.register(
+  'pawnManager',
+  new PawnManager(canvas, engine.eventBus, engine.width / engine.height)
+);
+
+// 2. WebGL Renderer, Lighting & Visual Styles
+engine.register('lightingRig', new LightingRig(sceneManager.scene, engine.eventBus));
+
 const renderPipeline = engine.register(
-    'renderPipeline',
-    new RenderPipeline(canvas, sceneManager.scene, pawnManager.camera, engine.eventBus)
+  'renderPipeline',
+  new RenderPipeline(canvas, sceneManager.scene, pawnManager.camera, engine.eventBus)
 );
 
 // 3. DOM HUD Overlay & Theme Engine
 engine.register('uiManager', new UiManager(hudRoot, engine.eventBus, renderPipeline));
 
-// 4. Start Main Loop
+// 4. Load Default Calibration World & Start Main Loop
+await sceneSerializer.loadFromUrl('/engineContent/starterPack/scenes/basicShapeTest.scene.json');
 engine.start();
