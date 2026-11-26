@@ -48,6 +48,7 @@ export class Engine {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
     if (w === 0 || h === 0) return;
+    if (w === this.width && h === this.height) return;
 
     this.width = w;
     this.height = h;
@@ -59,6 +60,9 @@ export class Engine {
     }
 
     this.eventBus.emit(EVENTS.ENGINE_RESIZE, { width: w, height: h });
+
+    const pipeline = this.get('renderPipeline');
+    pipeline?.render?.(0);
   }
 
   _loop(now) {

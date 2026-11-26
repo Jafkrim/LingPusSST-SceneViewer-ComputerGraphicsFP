@@ -270,7 +270,7 @@ src/world/
 | `src/engine/assetResolver.js` | `TBD` | Pending |
 | `src/engine/engine.js` | `5025241040` | WIP |
 | `src/engine/eventBus.js` | `5025241040` | WIP |
-| `src/engine/inputManager.js` | `TBD` | Pending |
+| `src/engine/inputManager.js` | `5025241040` | WIP |
 | `src/engine/resourceTracker.js` | `TBD` | Pending |
 | `src/pawn/controllers/baseController.js` | `TBD` | Pending |
 | `src/pawn/controllers/droneController.js` | `TBD` | Pending |

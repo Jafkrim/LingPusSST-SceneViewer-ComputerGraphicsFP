@@ -1,4 +1,5 @@
 import { Engine } from '@/engine/engine.js';
+import { InputManager } from '@/engine/inputManager.js';
 import { SceneManager } from '@/world/sceneManager.js';
 import { SceneSerializer } from '@/world/sceneSerializer.js';
 import { PawnManager } from '@/pawn/pawnManager.js';
@@ -11,6 +12,7 @@ const canvas = document.getElementById('viewport');
 const hudRoot = document.getElementById('hud-root');
 
 const engine = new Engine(canvas);
+const inputManager = engine.register('inputManager', new InputManager(canvas));
 
 // 1. World & Camera
 const sceneManager = engine.register('sceneManager', new SceneManager(engine.eventBus));
@@ -21,7 +23,7 @@ const sceneSerializer = engine.register(
 
 const pawnManager = engine.register(
   'pawnManager',
-  new PawnManager(canvas, engine.eventBus, engine.width / engine.height)
+  new PawnManager(canvas, engine.eventBus, engine.width / engine.height, inputManager)
 );
 
 // 2. WebGL Renderer, Lighting & Visual Styles

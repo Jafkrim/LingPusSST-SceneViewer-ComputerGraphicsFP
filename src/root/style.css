@@ -63,6 +63,13 @@ body {
   user-select: none;
 }
 
+html,
+body,
+canvas {
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
 #viewport {
   display: block;
   width: 100%;
