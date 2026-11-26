@@ -1,40 +1,51 @@
-export const EVENTS = {
-  ENGINE_RESIZE: 'engine:resize',
-  SCENE_LOADED: 'scene:loaded',
-  SCENE_CLEARED: 'scene:cleared',
-  ASSET_SPAWNED: 'asset:spawned',
-  OBJECT_SELECTED: 'object:selected',
-  OBJECT_TRANSFORMED: 'object:transformed',
-  TOOL_CHANGED: 'tool:changed',
-  STYLE_CHANGED: 'style:changed',
-  VIEWMODE_CHANGED: 'viewmode:changed',
-  RENDER_FLAG_CHANGED: 'render:flag',
-  TIME_OF_DAY_CHANGED: 'time:changed',
-  PAWN_CHANGED: 'pawn:changed',
-  THEME_CHANGED: 'theme:changed',
-  VIEWPORT_TOGGLE_GRID: 'viewport:toggleGrid',
-  VIEWPORT_TOGGLE_AXES: 'viewport:toggleAxes',
-  VIEWPORT_SET_GRID_STYLE: 'viewport:setGridStyle'
-};
-
 export class EventBus {
   constructor() {
     this._listeners = new Map();
   }
 
-  on(event, callback) {
-    if (!this._listeners.has(event)) {
-      this._listeners.set(event, new Set());
+  on(event, handler) {
+    if (typeof handler !== 'function') {
+      throw new TypeError(`EventBus.on("${event}") requires a function handler.`);
     }
-    this._listeners.get(event).add(callback);
-    return () => this.off(event, callback);
+    let set = this._listeners.get(event);
+    if (!set) {
+      set = new Set();
+      this._listeners.set(event, set);
+    }
+    set.add(handler);
+    return () => this.off(event, handler);
   }
 
-  off(event, callback) {
-    this._listeners.get(event)?.delete(callback);
+  once(event, handler) {
+    const off = this.on(event, (payload) => {
+      off();
+      handler(payload);
+    });
+    return off;
+  }
+
+  off(event, handler) {
+    const set = this._listeners.get(event);
+    if (!set) return;
+    set.delete(handler);
+    if (set.size === 0) {
+      this._listeners.delete(event);
+    }
   }
 
   emit(event, payload) {
-    this._listeners.get(event)?.forEach((cb) => cb(payload));
+    const set = this._listeners.get(event);
+    if (!set) return;
+    for (const handler of [...set]) {
+      handler(payload);
+    }
+  }
+
+  clear(event) {
+    if (event !== undefined) {
+      this._listeners.delete(event);
+    } else {
+      this._listeners.clear();
+    }
   }
 }

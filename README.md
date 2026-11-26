@@ -36,254 +36,311 @@ A modular, extensible 3D scene viewer built on Three.js and Vite, designed with 
 ### 1. Top-Level Overview
 ```text
 LingPusSST-SceneViewer-ComputerGraphicsFP/
-├── node_modules/       # Installed npm packages (excluded from Git via .gitignore)
-├── public/             # Static 3D assets, textures, HDRIs, and scene layouts (zero-code auto-discovery)
-├── src/                # Modular application source code
-├── .gitattributes      # Enforces consistent line endings (LF) and binary asset handling across OSes
-├── .gitignore          # Excludes build artifacts, dependencies, and local environment files from Git
+├── node_modules/       # Installed npm packages (external dependencies)
+├── public/             # Engine & user content (zero-code auto-discovery)
+├── src/                # Modular application source code organized by system domain
+├── .gitattributes      # Enforces consistent line endings (LF) and marks binary assets across OSes
+├── .gitignore          # Excludes node_modules, build output, and local scratch files from Git
 ├── LICENSE             # Repository software license terms
-├── package-lock.json   # Locked dependency tree ensuring consistent installs across machines
+├── package-lock.json   # Locked dependency tree for reproducible installs across machines
 ├── package.json        # Project dependencies (three, three-mesh-bvh, vite) and npm scripts
-├── README.md           # Project documentation and setup guide
-└── vite.config.js      # Vite build configuration, root entry mapping, and path aliases
+├── README.md           # Technical Design Document (TDD), architecture rules, and setup guide
+└── vite.config.js      # Vite dev/build config, root mapping, and path aliases
 ```
 
 ### 2. Static Content Packs (`public/`)
-Assets placed inside `public/` follow a **convention-over-configuration** folder hierarchy. Vite automatically scans these directories so new models, textures, skyboxes, and scenes appear in the UI without modifying JavaScript.
+Assets placed inside `public/` follow a **convention-over-configuration** folder hierarchy so engine packs and custom user packs can be discovered without editing core engine logic.
 ```text
 public/
-├── engineContent/
-│   └── starterPack/       # Built-in default pack & blueprint template for custom user packs
+├── engineContent/         # Built-in engine-shipped packs
+│   └── starterPack/       # Default pack & structural template for custom user packs
 │       ├── environments/  # Skybox HDRIs & Image-Based Lighting maps (.hdr, .exr)
-│       ├── meshes/        # Placeable 3D models (.glb, .gltf)
+│       ├── models/        # Placeable 3D models (.glb primary; .gltf in per-asset folder)
 │       ├── prefabs/       # Reusable multi-mesh groups & furniture sets (.prefab.json)
 │       ├── scenes/        # Saved scene layouts & lighting presets (.scene.json)
-│       └── textures/      # Surface material maps (.png, .jpg, .webp)
-└── userContent/           # Create custom pack folders here following the starterPack hierarchy above
+└── userContent/           # Custom user packs following the starterPack hierarchy
 ```
 
 ### 3. UI Theme Token Contract (`src/ui/themes/`)
-All HUD panels in `src/ui/panels/` must reference CSS custom properties defined in `src/root/style.css` and dynamically overridden by `ThemeManager` (`builtInDark.js`, `builtInWhite.js`, or any auto-discovered `.js` / `.json` theme file) rather than hardcoding hex or RGB colors.
+HUD components in `src/ui/panels/` and viewport guides in `src/rendering/` must consume CSS custom properties defined in `src/root/style.css` and applied at runtime by `ThemeManager` (`builtInDark.json`, `builtInLight.json`, or auto-discovered `.json` theme files) instead of hardcoding hex or RGB values.
 
 #### Color Tokens (Overridden by Themes)
-| Category | Token | Purpose & UI Panel Usage | `builtInDark` | `builtInWhite` |
+| Category | Token | Role & Usage | `builtInDark` | `builtInLight` |
 | :--- | :--- | :--- | :---: | :---: |
-| **Surfaces** | `--bg-viewport` | Fallback page backdrop & WebGL `scene.background` sync (`SceneManager`) | `#1d1d1d` | `#e5e7eb` |
-| | `--bg-panel` | Floating panel containers (`StatsPanel`, `InspectorPanel`, `RenderPanel`, `ContentBrowserPanel`) | `#2b2b2b` | `#f3f4f6` |
-| | `--bg-panel-header` | Collapsible panel title bars, section headers, and tab strips | `#232323` | `#e5e7eb` |
-| | `--bg-input` | Text fields, numeric scrubbers, dropdowns, search bars, and sliders | `#383838` | `#ffffff` |
-| | `--bg-hover` | Hover highlight for buttons, list rows, asset thumbnails, and tree items | `#474747` | `#d1d5db` |
-| | `--bg-overlay` | Backdrop dimming for theme installer or scene export modal dialogs | `rgba(0, 0, 0, 0.55)` | `rgba(15, 23, 42, 0.35)` |
-| **Borders** | `--border-subtle` | Outer panel borders and internal section dividers | `#181818` | `#cbd5e1` |
-| | `--border-widget` | Interactive control borders (buttons, inputs, dropdowns, checkboxes) | `#444444` | `#94a3b8` |
-| **Text** | `--text-primary` | Primary labels, active values, and panel titles | `#e6e6e6` | `#111827` |
-| | `--text-secondary` | Property labels, inactive tabs, and secondary metadata | `#a6a6a6` | `#4b5563` |
-| | `--text-muted` | Disabled options, placeholder text, and low-priority hardware telemetry | `#737373` | `#6b7280` |
-| | `--text-on-accent` | High-contrast text and icons rendered inside active `--accent-primary` buttons | `#ffffff` | `#ffffff` |
-| **Accents** | `--accent-primary` | Active tool buttons, selected hierarchy rows, and slider fills | `#4772b3` | `#2563eb` |
-| | `--accent-primary-hover` | Hover state for primary accent buttons and active toggles | `#5680c2` | `#1d4ed8` |
-| **Semantic** | `--status-warning` | Integrated GPU / high draw-call performance warnings (`StatsPanel`) | `#d9822b` | `#d97706` |
-| | `--status-danger` | Destructive actions (delete mesh, uninstall theme) and invalid JSON alerts | `#e04f5f` | `#dc2626` |
-| **3D Axes** | `--axis-x` | X-axis transform badge & gizmo indicator (`InspectorPanel`) | `#ff0000` | `#ff0000` |
-| | `--axis-y` | Y-axis transform badge & gizmo indicator (`InspectorPanel`) | `#00ff00` | `#00ff00` |
-| | `--axis-z` | Z-axis transform badge & gizmo indicator (`InspectorPanel`) | `#0000ff` | `#0000ff` |
-| **Viewport** | `--viewport-grid-minor` | Minor `1m` infinite grid subdivision lines (`ViewportGuides`) | `#525252` | `#cbd5e1` |
-| | `--viewport-grid-major` | Major `10m` infinite grid subdivision lines (`ViewportGuides`) | `#7a7a7a` | `#94a3b8` |
-| | `--viewport-grid-opacity` | Overall infinite grid and Y-axis opacity (`0.0` – `1.0`) | `0.8` | `0.8` |
-| | `--viewport-axis-x` | Infinite world X-axis floor line (`ViewportGuides`) | `#ff0000` | `#ff0000` |
-| | `--viewport-axis-y` | Infinite world Y-axis vertical line (`ViewportGuides`) | `#00ff00` | `#00ff00` |
-| | `--viewport-axis-z` | Infinite world Z-axis floor line (`ViewportGuides`) | `#0000ff` | `#0000ff` |
+| **Surfaces** | `--bg-viewport` | Outer canvas backdrop & fallback scene background | `#1d1d1d` | `#e2e8f0` |
+| | `--bg-panel` | Floating HUD panel containers | `#2b2b2b` | `#f8fafc` |
+| | `--bg-panel-header` | Panel title bars, section headers, and tab strips | `#232323` | `#edf2f7` |
+| | `--bg-input` | Text fields, numeric inputs, dropdowns, search bars, and sliders | `#383838` | `#ffffff` |
+| | `--bg-hover` | Hover state for buttons, list rows, cards, and tree items | `#474747` | `#dbeafe` |
+| | `--bg-overlay` | Dimmed backdrop behind modals and theme/scene dialogs | `rgba(0, 0, 0, 0.55)` | `rgba(15, 23, 42, 0.35)` |
+| **Borders** | `--border-subtle` | Panel outer frames and section dividers | `#181818` | `#cbd5e1` |
+| | `--border-widget` | Control borders for inputs, buttons, toggles, and selects | `#444444` | `#94a3b8` |
+| **Text** | `--text-primary` | Main labels, active values, and headings | `#e6e6e6` | `#0f172a` |
+| | `--text-secondary` | Field labels, secondary metadata, and inactive tabs | `#a6a6a6` | `#475569` |
+| | `--text-muted` | Disabled controls, placeholders, and low-priority telemetry | `#737373` | `#64748b` |
+| | `--text-on-accent` | Foreground text/icons over `--accent-primary` surfaces | `#ffffff` | `#ffffff` |
+| **Accents** | `--accent-primary` | Active selections, primary buttons, and slider fills | `#4772b3` | `#2563eb` |
+| | `--accent-primary-hover` | Hover state for primary accent buttons and active controls | `#5680c2` | `#1d4ed8` |
+| **Semantic** | `--status-warning` | Performance/GPU warnings (e.g., high draw calls or iGPU limits) | `#d9822b` | `#d97706` |
+| | `--status-danger` | Destructive actions, errors, and invalid theme/scene alerts | `#e04f5f` | `#dc2626` |
+| **Axes & Grid** | `--axis-x` | X-axis indicator badge and gizmo accent | `#ff0000` | `#ff0000` |
+| | `--axis-y` | Y-axis indicator badge and gizmo accent | `#00ff00` | `#00ff00` |
+| | `--axis-z` | Z-axis indicator badge and gizmo accent | `#0000ff` | `#0000ff` |
+| | `--viewport-grid-minor` | Minor `1m` grid lines (`ViewportGuides`) | `#525252` | `#cbd5e1` |
+| | `--viewport-grid-major` | Major `10m` grid lines (`ViewportGuides`) | `#7a7a7a` | `#94a3b8` |
+| | `--viewport-grid-opacity` | Grid and axis guide opacity (`0.0` – `1.0`) | `0.8` | `0.8` |
+| | `--viewport-axis-x` | World X-axis guide line (`ViewportGuides`) | `#ff0000` | `#ff0000` |
+| | `--viewport-axis-y` | World Y-axis guide line (`ViewportGuides`) | `#00ff00` | `#00ff00` |
+| | `--viewport-axis-z` | World Z-axis guide line (`ViewportGuides`) | `#0000ff` | `#0000ff` |
 
 #### Layout & Typography Tokens (Static Across Themes)
-| Token | Purpose & UI Panel Usage | Default Value |
+| Token | Role & Usage | Default Value |
 | :--- | :--- | :--- |
-| `--radius-sm` | Compact corners on inputs, badges, and small buttons | `3px` |
-| `--radius-md` | Outer corners on floating HUD panels and modal dialogs | `4px` |
-| `--font-ui` | Standard interface labels, headers, and buttons | `system-ui, -apple-system, 'Segoe UI', sans-serif` |
-| `--font-mono` | Numeric coordinates, hex IDs, shader info, and performance counters | `ui-monospace, 'Cascadia Code', Consolas, monospace` |
+| `--radius-sm` | Corner radius for inputs, badges, and compact buttons | `3px` |
+| `--radius-md` | Corner radius for floating panels and modal dialogs | `4px` |
+| `--font-ui` | UI labels, headers, buttons, and menus | `system-ui, -apple-system, 'Segoe UI', sans-serif` |
+| `--font-mono` | Coordinates, IDs, shader info, and telemetry readouts | `ui-monospace, 'Cascadia Code', Consolas, monospace` |
 
-#### Custom JSON Theme Schema
-Users can install external themes at runtime via `themeManager.install(json)` or drop `.json` / `.js` theme files into `src/ui/themes/` using this structure:
+#### Custom Theme Schema (`.json`)
+Custom themes use a declarative **JSON** schema so external palettes can be validated safely without executing arbitrary JavaScript. Register themes at runtime via `themeManager.install(json)` or place `.json` files in `src/ui/themes/`:
 ```json
 {
-   "id": "custom-theme-id",
-   "name": "Custom Theme Name",
-   "tokens": {
-      "--bg-viewport": "#1d1d1d",
-      "--bg-panel": "#2b2b2b",
-      "--bg-panel-header": "#232323",
-      "--bg-input": "#383838",
-      "--bg-hover": "#474747",
-      "--bg-overlay": "rgba(0, 0, 0, 0.55)",
-      "--border-subtle": "#181818",
-      "--border-widget": "#444444",
-      "--text-primary": "#e6e6e6",
-      "--text-secondary": "#a6a6a6",
-      "--text-muted": "#737373",
-      "--text-on-accent": "#ffffff",
-      "--accent-primary": "#4772b3",
-      "--accent-primary-hover": "#5680c2",
-      "--status-warning": "#d9822b",
-      "--status-danger": "#e04f5f",
-      "--axis-x": "#ff0000",
-      "--axis-y": "#00ff00",
-      "--axis-z": "#0000ff",
-      "--viewport-grid-minor": "#525252",
-      "--viewport-grid-major": "#7a7a7a",
-      "--viewport-grid-opacity": "1",
-      "--viewport-axis-x": "#ff0000",
-      "--viewport-axis-y": "#00ff00",
-      "--viewport-axis-z": "#0000ff"
-   }
+  "id": "custom-theme-id",
+  "name": "Custom Theme Name",
+  "tokens": {
+    "--bg-viewport": "#1d1d1d",
+    "--bg-panel": "#2b2b2b",
+    "--bg-panel-header": "#232323",
+    "--bg-input": "#383838",
+    "--bg-hover": "#474747",
+    "--bg-overlay": "rgba(0, 0, 0, 0.55)",
+    "--border-subtle": "#181818",
+    "--border-widget": "#444444",
+    "--text-primary": "#e6e6e6",
+    "--text-secondary": "#a6a6a6",
+    "--text-muted": "#737373",
+    "--text-on-accent": "#ffffff",
+    "--accent-primary": "#4772b3",
+    "--accent-primary-hover": "#5680c2",
+    "--status-warning": "#d9822b",
+    "--status-danger": "#e04f5f",
+    "--axis-x": "#ff0000",
+    "--axis-y": "#00ff00",
+    "--axis-z": "#0000ff",
+    "--viewport-grid-minor": "#525252",
+    "--viewport-grid-major": "#7a7a7a",
+    "--viewport-grid-opacity": "0.8",
+    "--viewport-axis-x": "#ff0000",
+    "--viewport-axis-y": "#00ff00",
+    "--viewport-axis-z": "#0000ff"
+  }
 }
 ```
 
 ### 4. Application Source Code (`src/`)
 
+#### Configuration (`src/config/`)
+```text
+src/config/
+├── cameraSettings.json   # Per-mode speeds, Sprint/Alt multipliers, FOV/distance limits, drone inertia/tilt, and roll recovery.
+├── keybinds.json         # Default action-to-input mappings loaded by InputManager and resettable in Settings.
+└── uiSettings.json       # Default UI preferences.
+```
+
 #### Core Engine (`src/engine/`)
-Core framework systems decoupled from rendering styles and UI components:
+Core runtime systems decoupled from rendering styles, scene state, and UI components:
 ```text
 src/engine/
-├── assetResolver.js    # Auto-discovers files in engineContent/ and userContent/ and maps extensions to their respective asset loaders.
-├── engine.js           # Runs the main frame loop, tracks delta time, handles viewport resizing, and registers subsystems.
-├── eventBus.js         # Central publish/subscribe messaging system for decoupled module communication.
-├── inputManager.js     # Tracks keyboard, mouse, scroll wheel, and pointer-lock states for user input.
-└── resourceTracker.js  # Tracks loaded GPU assets and disposes of unused geometries, materials, and textures to free memory.
+├── assetResolver.js    # Resolves logical paths across engineContent/ and userContent/ and routes extensions to loaders.
+├── engine.js           # Runs the main frame loop, clamps delta time, handles viewport resizing, and registers subsystems.
+├── eventBus.js         # Typed publish/subscribe hub for decoupled cross-module events.
+├── inputManager.js     # Captures keyboard, pointer, wheel, and gesture input, also blocks browser zoom and buffers deltas.
+└── resourceTracker.js  # Tracks allocated GPU resources (geometries, materials, textures) for clean disposal.
 ```
 
 #### Camera & Movement (`src/pawn/`)
 ```text
 src/pawn/
-├── controllers/              # Swappable camera navigation modes
-│   ├── baseController.js     # Base interface (activate, deactivate, update) shared by all camera controllers.
-│   ├── droneController.js    # 6-DOF free-fly camera (WASD + vertical thrust + speed boost) without floor constraints.
-│   ├── orbitController.js    # Mouse orbit, pan, and zoom camera with focus-on-selected object support.
-│   └── walkController.js     # First-person WASD + pointer-lock movement with gravity and BVH collision.
-└── pawnManager.js            # Manages the active camera controller and forwards user input states each frame.
+├── controllers/                # Swappable camera navigation modes driven by cameraSettings.json
+│   ├── baseController.js       # Shared controller lifecycle and runtime settings:cameraChanged patch handler.
+│   ├── droneController.js      # Quadcopter physics with local-body rotor thrust, banking tilt, and inertia damping.
+│   ├── surveyorController.js   # RMB-hold Fly mode and RMB-up Alt-modified Orbit/Pan/Zoom.
+│   └── walkController.js       # First-person gravity movement.
+└── pawnManager.js              # Owns the active camera, switches controllers, and updates active navigation.
 ```
 
-#### Rendering Pipeline (`src/rendering/`)
-Manages WebGL rendering, visual styles, post-processing, lighting, and shaders:
+### Rendering Pipeline (`src/rendering/`)
+Owns WebGL rendering, lighting, custom shaders, render styles, passes, dynamic weather, and viewport guides:
+
 ```text
 src/rendering/
-├── lighting/                          # Illumination, skyboxes, and diurnal cycle
-│   ├── globalIlluminationSystem.js    # Manages real-time indirect bounce lighting via light probes or screen-space GI.
-│   ├── lightingRig.js                 # Manages directional sun/moon lights, ambient fill, and shadow maps.
-│   ├── reflectionProbeSystem.js       # Manages local real-time cubemap reflections and planar mirror/puddle reflectors.
-│   ├── skyboxSystem.js                # Loads HDR environment maps, IBL reflections, and procedural aurora sky domes.
-│   └── timeOfDaySystem.js             # Simulates astronomical sun/moon position from coordinates and date/time, updating light color and sky gradients.
-├── passes/                            # Modular post-processing and buffer passes
-│   ├── basePass.js                    # Base interface (setup, render, resize, dispose) for render passes.
-│   ├── debugBufferPass.js             # Displays raw render buffers (depth, normals, ambient occlusion) directly in the viewport.
-│   ├── outlinePass.js                 # Edge-detection pass generating screen-space ink outlines for nprStyle.
-│   ├── postProcessPass.js             # Applies final post-processing effects such as bloom, tone mapping, and anti-aliasing.
-│   └── scenePass.js                   # Renders the primary 3D scene color and depth buffers.
-├── shaders/                           # Custom GLSL shaders and uniform synchronization
-│   ├── npr/                           # Non-Photorealistic Rendering (cel-shading) materials and GLSL shader programs
-│   │   ├── nprMaterial.js             # Builds cel-shaded materials while preserving original model base color and normal maps.
-│   │   ├── toon.frag                  # Fragment shader computing quantized diffuse light bands, specular steps, and rim highlights.
-│   │   └── toon.vert                  # Vertex shader preparing surface normals and view directions for toon shading.
-│   └── shaderRegistry.js              # Synchronizes global uniforms (uTime, uLightDir, uCameraPos, wind, wetness) across custom materials.
-├── styles/                            # Swappable visual rendering modes
-│   ├── baseRenderStyle.js             # Base contract (activate, deactivate, render, update) implemented by all render modes.
-│   ├── nprStyle.js                    # Non-Photorealistic Rendering (NPR) mode using cel-shaded materials, crisp shadows, and ink outlines.
-│   ├── prStyle.js                     # Photorealistic mode using PBR materials, tone mapping, soft shadows, IBL, and post-processing.
-│   └── viewModeStyle.js               # Diagnostic modes (Lit, Unlit, Wireframe [X-Ray/Opaque], Lighting, Reflection, Collision, and G-buffers).
-├── weather/                           # Dynamic atmospheric weather, precipitation, and surface accumulation
-│   ├── lightningSystem.js             # Triggers procedural branching lightning bolts and directional storm flashes.
-│   ├── surfaceWeatherPatch.js         # Patches materials for rain puddles, wetness roughness, raindrop ripples, and upward-surface snow accumulation.
-│   └── weatherSystem.js               # Manages weather presets (clear, fog, rain, storm, snow, blizzard, dust), wind gusts, GPU precipitation, and aurora state.
-├── renderPipeline.js                  # Manages the WebGL renderer and effect composer, executing the active render style and resize updates.
-└── viewportGuides.js                  # Renders the infinite shader-based viewport floor grid and world XYZ axes excluded from scene saves.
+├── lighting/                          # Direct/indirect lighting, reflections, sky/IBL, and solar/lunar cycle
+│   ├── globalIlluminationSystem.js    # Interval-updated real-time probes and screen-space indirect bounce.
+│   ├── lightingRig.js                 # Sun/moon directional lights, ambient fill, and penumbra-capable shadow maps.
+│   ├── reflectionProbeSystem.js       # Real-time/probe cubemaps blended with screen-space reflections (SSR) and planar/puddle surfaces.
+│   ├── skyboxSystem.js                # Loads HDR/EXR maps, generates IBL PMREM, and renders procedural aurora sky domes.
+│   └── timeOfDaySystem.js             # Computes sun/moon angles from lat/lon, date/time (Y-M-D H:M:S), and timezone offset.
+├── passes/                            # Modular render, AO, debug buffer, and post-processing passes
+│   ├── aoPass.js                      # Computes selectable ambient occlusion (SSAO/GTAO) into an AO buffer for lighting and debug view.
+│   ├── basePass.js                    # Shared pass lifecycle (setup, render, resize, dispose).
+│   ├── debugBufferPass.js             # Inspects buffers: Base Color, Metallic, Opacity, Roughness, Specular, World Normal, World Tangent, Scene Depth, AO, Velocity, Pre/Post-Tonemap HDR.
+│   ├── outlinePass.js                 # Generates screen-space outlines for NPR mode.
+│   ├── postProcessPass.js             # Runs TAA/FXAA, DoF, Motion Blur, Sun Rays, Bloom, Lens Flare/Dirt, Tone Mapping (AgX/ACES), Color Grading, Chromatic Aberration, Vignette, and Film Grain.
+│   └── scenePass.js                   # Renders primary scene color, depth, normals/tangents, velocity, and G-buffer targets.
+├── shaders/                           # Custom GLSL programs and shared uniform synchronization
+│   ├── npr/                           # Non-photorealistic cel-shading material and GLSL shaders
+│   │   ├── nprMaterial.js             # Builds cel-shaded materials while preserving base color and normal maps.
+│   │   ├── toon.frag                  # Computes quantized diffuse bands, specular steps, and rim highlights.
+│   │   └── toon.vert                  # Transforms normals and view vectors for toon shading.
+│   └── shaderRegistry.js              # Synchronizes shared uniforms (time, sun/light dir, camera, wind, wetness) across shaders.
+├── styles/                            # Swappable rendering and diagnostic view modes
+│   ├── baseRenderStyle.js             # Shared style lifecycle (activate, deactivate, update, render).
+│   ├── nprStyle.js                    # Cel-shaded rendering with crisp shadows and outlines.
+│   ├── prStyle.js                     # PBR rendering with IBL, penumbra shadows, GI/SSR, and post-processing.
+│   └── viewModeStyle.js               # Lit, Unlit, Wireframe (Opaque / Pass-Through), Lighting, Reflection, and Collision.
+├── weather/                           # Weather states, precipitation, and surface accumulation
+│   ├── lightningSystem.js             # Triggers procedural branching lightning bolts and storm flashes.
+│   ├── surfaceWeatherPatch.js         # Patches materials for puddles, wetness roughness, rain ripples, and snow buildup.
+│   └── weatherSystem.js               # Manages weather presets (clear, fog, rain, storm, snow, blizzard, dust), wind, precipitation, and auroras.
+├── renderPipeline.js                  # Manages the WebGLRenderer, targets/passes, active style, and viewport resizing.
+└── viewportGuides.js                  # Renders shader floor grid and world XYZ axes excluded from scene saves.
 ```
 
 #### Entry Point (`src/root/`)
 ```text
 src/root/
-├── index.html    # Main HTML shell hosting the WebGL viewport canvas and UI overlay containers.
-├── main.js       # Application entry point that initializes the engine, registers subsystems, and starts the main loop.
-└── style.css     # Defines full-viewport layout and HUD panel styling.
+├── index.html    # HTML shell hosting the viewport canvas container and UI overlay mount points.
+├── main.js       # Entry point that wires the engine, registers subsystems/tools, and starts the loop.
+└── style.css     # Full-viewport layout rules and HUD styling backed by CSS custom properties.
 ```
 
 #### Interactive Viewport Tools (`src/tools/`)
 User-triggered tools for scene assembly, inspection, and measurement:
 ```text
 src/tools/
-├── measurementTool.js  # Lets the user pick two 3D surface points to measure real-world distance.
-├── placementTool.js    # Handles drag-and-drop model spawning from the content browser with BVH surface and nearest-point snapping.
-├── sectionCutTool.js   # Provides interactive clipping planes to slice through models and inspect internal geometry.
-└── selectionTool.js    # Performs BVH raycasting on click to select and highlight scene meshes.
+├── measurementTool.js  # Picks two 3D surface points to compute and display real-world distance.
+├── placementTool.js    # Spawns dragged models from the content browser with BVH surface and nearest-point snapping.
+├── sectionCutTool.js   # Applies interactive clipping planes to slice geometry and inspect interiors.
+└── selectionTool.js    # Runs BVH raycasting on pointer selection to select and highlight scene meshes.
 ```
 
 #### User Interface (`src/ui/`)
-DOM overlay panels decoupled from WebGL rendering logic:
+DOM overlay panels decoupled from WebGL rendering logic and scene state:
 ```text
 src/ui/
-├── panels/                      # Modular UI control panels
-│   ├── contentBrowserPanel.js   # Browses available engineContent/ and userContent/ assets alongside the active scene hierarchy.
-│   ├── inspectorPanel.js        # Displays and edits transform values, mesh statistics, and material properties of the selected object.
-│   ├── renderPanel.js           # Provides controls for switching render styles, adjusting time of day, toggling passes, and exporting scenes.
-│   ├── settingsPanel.js         # Provides graphics quality presets, post-processing toggles, and customizable keybind settings.
-│   └── statsPanel.js            # Displays real-time FPS, frame time, draw calls, and active triangle counts.
-├── themes/                      # Modular UI theme palettes and runtime installer
-│   ├── builtInDark.js           # Built-in dark slate CSS token palette.
-│   ├── builtInWhite.js          # Built-in high-contrast light/white CSS token palette.
-│   └── themeManager.js          # Auto-discovers, applies, switches, installs, and uninstalls custom JSON/JS UI themes via CSS variables.
-└── uiManager.js                 # Mounts HUD panels, initializes ThemeManager, and connects UI interactions to eventBus.
+├── panels/                      # Modular HUD control panels
+│   ├── contentBrowserPanel.js   # Browses engineContent/ and userContent/ assets and scene hierarchy items.
+│   ├── inspectorPanel.js        # Edits transforms, material properties, and mesh stats for the selected object.
+│   ├── renderPanel.js           # Controls render styles, time of day, render passes, and scene export actions.
+│   ├── settingsPanel.js         # Manages graphics presets, post-processing toggles, and keybind settings.
+│   └── statsPanel.js            # Displays real-time FPS, frame time, draw calls, triangles, GPU info, and GLSL versions.
+├── themes/                      # Built-in theme presets and runtime JSON theme manager
+│   ├── builtInDark.json         # Built-in dark CSS token preset.
+│   ├── builtInLight.json        # Built-in light CSS token preset.
+│   └── themeManager.js          # Discovers, switches, installs, and uninstalls JSON themes via CSS variables.
+└── uiManager.js                 # Mounts HUD panels, initializes ThemeManager, and bridges UI actions via eventBus.
 ```
 
 #### Shared Utilities (`src/utils/`)
 Stateless helper functions reused across modules:
 ```text
 src/utils/
-├── disposal.js   # Recursive cleanup helper for freeing Three.js geometries, materials, and textures from GPU memory.
-├── math.js       # Math utilities for clamping, interpolation, grid/nearest snapping, and solar angle calculations.
-└── noise.js      # Deterministic 2D/3D procedural noise, fBm, and cellular ripple helpers for wind, puddles, snow, and auroras.
+├── disposal.js   # Stateless recursive helpers for disposing Three.js geometries, materials, and textures.
+├── math.js       # Pure math helpers for clamping, interpolation, grid/nearest snapping, and solar angle math.
+└── noise.js      # Deterministic 2D/3D procedural noise, fBm, and ripple generators for weather and surface effects.
 ```
 
 #### Scene & Spatial Management (`src/world/`)
 ```text
 src/world/
-├── sceneManager.js     # Manages the active 3D scene graph, object lifecycle, and original material caching across style switches.
-├── sceneSerializer.js  # Saves and loads scene configurations (object transforms, asset paths, render style, and time of day) as .scene.json.
-└── spatialIndex.js     # Builds BVH acceleration structures on loaded meshes for fast raycasting, snapping, and collision queries.
+├── sceneManager.js     # Owns the active scene graph, entity lifecycle, viewport backdrop sync, and material caching.
+├── sceneSerializer.js  # Serializes and restores .scene.json layouts.
+└── spatialIndex.js     # Builds and maintains BVH acceleration structures for fast raycasting, snapping, and collision.
 ```
+
+### 5. Controls & Rebindable Action Contract (`src/engine/inputManager.js` & `src/config/keybinds.json`)
+All camera controllers, tools, and UI shortcuts query **logical action IDs** from `InputManager` rather than hardcoded key literals. Default bindings live in `src/config/keybinds.json` and can be overridden at runtime via `settings:keybindsChanged`. Mouse bindings use **LMB**, **RMB**, and **Alt**-modified gestures (avoiding **MMB** for full laptop touchpad support).
+
+#### Cursor & Controller Behavior Rules
+- **Surveyor (`surveyorController.js`):** Hybrid viewport camera combining **Orbit** and **Fly** in one mode:
+  - **Orbit State (Default / RMB Released):** Mouse cursor moves freely to hover and click objects. Without a selection, `Alt + LMB Drag` rotates in-place, `Alt + RMB Drag` pans, `Alt + LMB + RMB Drag` or `Wheel` adjusts FOV, and `F` does nothing. With a selected object/prefab, `Alt` hides/locks the cursor for target-centric orbit (`Alt + LMB`), pan (`Alt + RMB`), dolly zoom (`Alt + LMB + RMB` / `Wheel`), and `F` frames the selection.
+  - **Fly State (RMB Held without `Alt`):** Captures and hides the cursor for free-look (`RMB` + mouse move) with `WASD` horizontal movement, `E`/`Q` vertical movement, `Shift` sprint, and `Alt` slow precision. Releasing `RMB` immediately returns to Orbit state and restores the cursor.
+- **Drone (`droneController.js`):** Simulates quadcopter flight with velocity inertia, pitch/roll banking into turns, and thrust along the drone's local forward, right, and tilted rotor `up` vector (`E`/`Q`).
+- **Walk (`walkController.js`):** First-person gravity movement (`WASD`, `Space` to jump when grounded). Contains no virtual floor at `y = 0`, allowing free-fall off edges until `spatialIndex.js` resolves collision with scene geometry.
+
+#### Default Action Bindings (`src/config/keybinds.json`)
+| Category | Logical Action ID | Default Input(s) | Behavior |
+| :--- | :--- | :--- | :--- |
+| **Mode Switching** | `camera.mode.surveyor` | `1` (`Digit1`) | Switch active controller to **Surveyor** (Hybrid Orbit/Fly). |
+| | `camera.mode.drone` | `2` (`Digit2`) | Switch active controller to **Drone**. |
+| | `camera.mode.walk` | `3` (`Digit3`) | Switch active controller to **Walk**. |
+| **View Modes** | `view.mode.1` – `view.mode.6` | `4` – `9` (`Digit4`–`Digit9`) | Switch viewport rendering/diagnostic view mode (`Lit`, `Unlit`, `Wireframe`, `Lighting`, `Reflection`, `Collision`). |
+| **Surveyor Orbit** | `camera.orbit.modifier` | `Alt` (`AltLeft`, `AltRight`) | Activates Orbit manipulation when `RMB` fly is not active. |
+| | `camera.orbit.rotate` | `Alt + LMB Drag` | Rotates camera in-place (unselected) or orbits around selected object. |
+| | `camera.orbit.pan` | `Alt + RMB Drag` | Pans camera or selected-object pivot across screen plane. |
+| | `camera.orbit.zoom` | `Alt + LMB + RMB Drag` / `Wheel` | Adjusts **FOV** (unselected) or dollies near/far around selected object. |
+| | `camera.focus` | `F` (`KeyF`) | Frames the active selection (only active when an object/prefab is selected). |
+| **Fly / Drone / Walk** | `camera.fly.engage` / `camera.look` | `RMB` (`Mouse2`) / Captured Pointer | Engages Fly mode in **Surveyor** and rotates camera yaw/pitch while cursor is captured. |
+| | `camera.moveForward` | `W` (`KeyW`) | Moves forward. |
+| | `camera.moveBackward` | `S` (`KeyS`) | Moves backward. |
+| | `camera.moveLeft` | `A` (`KeyA`) | Strafes left. |
+| | `camera.moveRight` | `D` (`KeyD`) | Strafes right. |
+| | `camera.moveUp` | `E` (`KeyE`) | Ascends vertically (**Surveyor Fly**) or thrusts along local rotor up-vector (**Drone**). |
+| | `camera.moveDown` | `Q` (`KeyQ`) | Descends vertically (**Surveyor Fly**) or thrusts downward along local rotor up-vector (**Drone**). |
+| | `camera.jump` | `Space` | Jumps when grounded (**Walk** mode only). |
+| | `camera.sprint` | `Shift` (`ShiftLeft`, `ShiftRight`) | Applies per-mode sprint speed multiplier while held. |
+| | `camera.slow` | `Alt` (`AltLeft`, `AltRight`) | Applies per-mode slow multiplier while held. |
+| **Viewport Tools** | `tool.select` | `LMB` (`Mouse0`) | Raycasts and selects mesh via `selectionTool.js` (or re-captures cursor when clicked in **Drone**/**Walk**). |
+| | `tool.measure` | `M` (`KeyM`) | Toggles two-point surface distance tool (`measurementTool.js`). |
+| | `tool.sectionCut` | `X` (`KeyX`) | Toggles interactive clipping plane (`sectionCutTool.js`, **Surveyor** mode only). |
+| | `tool.cancel` | `Esc` (`Escape`) | Releases cursor lock in **Drone**/**Walk**, or cancels active tool/placement/selection in **Surveyor**. |
+| **UI & Panels** | `ui.toggleHud` | `H` (`KeyH`) | Toggles Game Mode (hides/shows all HUD panels). |
+| | `ui.toggleContentBrowser` | `Shift + Space` | Toggles Content Browser drawer. |
+| | `ui.toggleSettings` | `\` (`Backslash`) | Toggles Settings panel (camera settings, keybinds, graphics presets, themes). |
+| | `ui.toggleStats` | `]` (`BracketRight`) | Toggles real-time FPS / GPU performance overlay. |
+| | `ui.cycleTheme` | `T` (`KeyT`) | Cycles active UI theme preset. |
+
 ## Development Progress
 
 ### Application Source Code (`src/`)
-**Overall Progress:** `0 / 55` (**0.00%**)
+**Overall Progress:** `0 / 61` (**0.00%**)
 
 | Module | Completed | Total | Progress |
 | :--- | :---: | :---: | :---: |
+| `src/config/` | 0 | 3 | **0.00%** |
 | `src/engine/` | 0 | 5 | **0.00%** |
 | `src/pawn/` | 0 | 5 | **0.00%** |
-| `src/rendering/` | 0 | 23 | **0.00%** |
+| `src/rendering/` | 0 | 24 | **0.00%** |
 | `src/root/` | 0 | 3 | **0.00%** |
 | `src/tools/` | 0 | 4 | **0.00%** |
-| `src/ui/` | 0 | 9 | **0.00%** |
+| `src/ui/` | 0 | 11 | **0.00%** |
 | `src/utils/` | 0 | 3 | **0.00%** |
 | `src/world/` | 0 | 3 | **0.00%** |
 
 #### File Implementation & Task Assignment
 | File Path | Assigned NRP | Status |
 | :--- | :---: | :---: |
+| `src/config/cameraSettings.json` | `5025241040` | WIP |
+| `src/config/keybinds.json` | `5025241040` | WIP |
+| `src/config/uiSettings.json` | `5025241040` | WIP |
 | `src/engine/assetResolver.js` | `TBD` | Pending |
 | `src/engine/engine.js` | `5025241040` | WIP |
 | `src/engine/eventBus.js` | `5025241040` | WIP |
 | `src/engine/inputManager.js` | `5025241040` | WIP |
 | `src/engine/resourceTracker.js` | `TBD` | Pending |
-| `src/pawn/controllers/baseController.js` | `TBD` | Pending |
-| `src/pawn/controllers/droneController.js` | `TBD` | Pending |
-| `src/pawn/controllers/orbitController.js` | `TBD` | Pending |
-| `src/pawn/controllers/walkController.js` | `TBD` | Pending |
+| `src/pawn/controllers/baseController.js` | `5025241040` | WIP |
+| `src/pawn/controllers/droneController.js` | `5025241040` | WIP |
+| `src/pawn/controllers/surveyorController.js` | `5025241040` | WIP |
+| `src/pawn/controllers/walkController.js` | `5025241040` | WIP |
 | `src/pawn/pawnManager.js` | `5025241040` | WIP |
 | `src/rendering/lighting/globalIlluminationSystem.js` | `TBD` | Pending |
 | `src/rendering/lighting/lightingRig.js` | `5025241040` | WIP |
 | `src/rendering/lighting/reflectionProbeSystem.js` | `TBD` | Pending |
 | `src/rendering/lighting/skyboxSystem.js` | `TBD` | Pending |
 | `src/rendering/lighting/timeOfDaySystem.js` | `TBD` | Pending |
+| `src/rendering/passes/aoPass.js` | `TBD` | Pending |
 | `src/rendering/passes/basePass.js` | `TBD` | Pending |
-| `src/rendering/passes/debugBufferPass.js` | `TBD` | Pending 
+| `src/rendering/passes/debugBufferPass.js` | `TBD` | Pending |
 | `src/rendering/passes/outlinePass.js` | `TBD` | Pending |
 | `src/rendering/passes/postProcessPass.js` | `TBD` | Pending |
 | `src/rendering/passes/scenePass.js` | `TBD` | Pending |
@@ -310,26 +367,25 @@ src/world/
 | `src/ui/panels/contentBrowserPanel.js` | `TBD` | Pending |
 | `src/ui/panels/inspectorPanel.js` | `TBD` | Pending |
 | `src/ui/panels/renderPanel.js` | `TBD` | Pending |
-| `src/ui/panels/settingsPanel.js` | `TBD` | Pending |
+| `src/ui/panels/settingsPanel.js` | `5025241040` | WIP |
 | `src/ui/panels/statsPanel.js` | `5025241040` | WIP |
-| `src/ui/themes/builtInDark.js` | `5025241040` | WIP |
-| `src/ui/themes/builtInWhite.js` | `5025241040` | WIP |
+| `src/ui/themes/builtInDark.json` | `5025241040` | WIP |
+| `src/ui/themes/builtInLight.json` | `5025241040` | WIP |
 | `src/ui/themes/themeManager.js` | `5025241040` | WIP |
 | `src/ui/uiManager.js` | `5025241040` | WIP |
 | `src/utils/disposal.js` | `TBD` | Pending |
 | `src/utils/math.js` | `TBD` | Pending |
 | `src/utils/noise.js` | `TBD` | Pending |
 | `src/world/sceneManager.js` | `5025241040` | WIP |
-| `src/world/sceneSerializer.js` | `5025241040` | WIP |
+| `src/world/sceneSerializer.js` | `TBD` | Pending |
 | `src/world/spatialIndex.js` | `TBD` | Pending |
 
 ### Engine Content (`public/engineContent/`)
-**Overall Progress:** `0 / 5` (**0.00%**)
+**Overall Progress:** `0 / 4` (**0.00%**)
 
 | Directory | Assigned NRP | Status |
 | :--- | :---: | :---: |
 | `public/engineContent/starterPack/environments/` | `TBD` | Pending |
-| `public/engineContent/starterPack/meshes/` | `TBD` | Pending |
+| `public/engineContent/starterPack/models/` | `TBD` | Pending |
 | `public/engineContent/starterPack/prefabs/` | `TBD` | Pending |
-| `public/engineContent/starterPack/scenes/` | `5025241040` | WIP |
-| `public/engineContent/starterPack/textures/` | `TBD` | Pending |
+| `public/engineContent/starterPack/scenes/` | `TBD` | Pending |

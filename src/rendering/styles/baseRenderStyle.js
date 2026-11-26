@@ -1,22 +1,27 @@
 export class BaseRenderStyle {
-  constructor(renderer, scene, camera, eventBus) {
-    this.renderer = renderer;
-    this.scene = scene;
-    this.camera = camera;
+  constructor({ id, label, pipeline, eventBus }) {
+    this.id = id;
+    this.label = label ?? id;
+    this.pipeline = pipeline;
     this.eventBus = eventBus;
+    this.active = false;
   }
 
-  activate() {}
-
-  deactivate() {}
-
-  resize(width, height) {}
-
-  update(dt) {}
-
-  render(dt) {
-    this.renderer.render(this.scene, this.camera);
+  activate() {
+    this.active = true;
   }
 
-  dispose() {}
+  deactivate() {
+    this.active = false;
+  }
+
+  update(_dt, _ctx) {}
+
+  render(_renderer, _scene, _camera) {}
+
+  resize(_width, _height, _pixelRatio) {}
+
+  dispose() {
+    this.active = false;
+  }
 }

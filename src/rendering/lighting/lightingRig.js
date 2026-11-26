@@ -1,51 +1,49 @@
 import * as THREE from 'three';
 
 export class LightingRig {
-  constructor(scene, eventBus = null) {
+  constructor({ scene, eventBus, config = {} }) {
+    if (!scene || !eventBus) {
+      throw new Error('LightingRig requires scene and eventBus.');
+    }
+
     this.scene = scene;
     this.eventBus = eventBus;
 
     this.group = new THREE.Group();
     this.group.name = 'LightingRig';
-    this.group.userData.excludeFromSave = true;
 
-    this.hemiLight = new THREE.HemisphereLight(0xddeeff, 0x3b3b3b, 1.1);
-    this.hemiLight.position.set(0, 20, 0);
+    this.hemiLight = new THREE.HemisphereLight(
+      config.skyColor ?? 0xdbeafe,
+      config.groundColor ?? 0x334155,
+      config.hemiIntensity ?? 1.0
+    );
     this.group.add(this.hemiLight);
 
-    this.sunLight = new THREE.DirectionalLight(0xfff5e4, 2.2);
-    this.sunLight.position.set(8, 14, 10);
-    this.sunLight.castShadow = true;
-    this.sunLight.shadow.mapSize.set(2048, 2048);
-    this.sunLight.shadow.camera.near = 0.5;
-    this.sunLight.shadow.camera.far = 60;
-    const d = 14;
-    this.sunLight.shadow.camera.left = -d;
-    this.sunLight.shadow.camera.right = d;
-    this.sunLight.shadow.camera.top = d;
-    this.sunLight.shadow.camera.bottom = -d;
-    this.sunLight.shadow.bias = -0.0005;
-    this.group.add(this.sunLight);
-    this.group.add(this.sunLight.target);
+    this.dirLight = new THREE.DirectionalLight(
+      config.sunColor ?? 0xffffff,
+      config.sunIntensity ?? 2.4
+    );
+    const sunPos = config.sunPosition ?? [12, 18, 12];
+    this.dirLight.position.set(sunPos[0], sunPos[1], sunPos[2]);
+    this.dirLight.castShadow = config.castShadow ?? true;
+    this.dirLight.shadow.mapSize.set(
+      config.shadowMapSize ?? 1024,
+      config.shadowMapSize ?? 1024
+    );
+    this.group.add(this.dirLight);
 
     this.scene.add(this.group);
 
-    this._bindEvents();
-  }
-
-  _bindEvents() {
-    this.eventBus?.on('timeOfDay:updated', ({ sunDirection, sunColor, sunIntensity, ambientIntensity }) => {
-      if (sunDirection) {
-        this.sunLight.position.copy(sunDirection).multiplyScalar(20);
-      }
-      if (sunColor) this.sunLight.color.set(sunColor);
-      if (typeof sunIntensity === 'number') this.sunLight.intensity = sunIntensity;
-      if (typeof ambientIntensity === 'number') this.hemiLight.intensity = ambientIntensity;
+    this._unsub = this.eventBus.on('settings:lightingChanged', (patch = {}) => {
+      if (typeof patch.sunIntensity === 'number') this.dirLight.intensity = patch.sunIntensity;
+      if (typeof patch.hemiIntensity === 'number') this.hemiLight.intensity = patch.hemiIntensity;
+      if (typeof patch.castShadow === 'boolean') this.dirLight.castShadow = patch.castShadow;
     });
   }
 
   dispose() {
-    this.sunLight.shadow.map?.dispose();
+    this._unsub?.();
     this.scene.remove(this.group);
+    this.dirLight.shadow.map?.dispose?.();
   }
 }

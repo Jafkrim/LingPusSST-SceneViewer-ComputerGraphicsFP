@@ -1,0 +1,14 @@
+{
+  "storageKey": "lingpus_sst_ui_settings_v1",
+  "theme": "builtInDark",
+  "viewMode": 1,
+  "hudHidden": false,
+  "fontScale": {
+    "default": 100,
+    "step": 5
+  },
+  "panels": {
+    "settingsVisible": true,
+    "statsVisible": true
+  }
+}

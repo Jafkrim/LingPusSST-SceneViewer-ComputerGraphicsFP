@@ -1,138 +1,85 @@
-import { EVENTS } from '@/engine/eventBus.js';
-
-const STORAGE_CUSTOM_KEY = 'lingpussst:custom-themes';
-const STORAGE_ACTIVE_KEY = 'lingpussst:active-theme';
-
-// Scans every .js and .json file in this directory regardless of filename
-const themeModules = import.meta.glob(['./*.js', './*.json', '!./themeManager.js'], { eager: true });
-
-function isValidTheme(obj) {
-  return (
-    obj &&
-    typeof obj === 'object' &&
-    typeof obj.id === 'string' &&
-    typeof obj.name === 'string' &&
-    obj.tokens &&
-    typeof obj.tokens === 'object' &&
-    !Array.isArray(obj.tokens)
-  );
-}
+const DISCOVERED_THEME_MODULES = import.meta.glob('./*.json', { eager: true });
 
 export class ThemeManager {
-  constructor(eventBus, defaultThemeId = null) {
+  constructor({ eventBus, root = document.documentElement, initialThemeId = null }) {
     this.eventBus = eventBus;
+    this.root = root;
     this.themes = new Map();
-    this._appliedTokens = [];
+    this.activeThemeId = null;
 
-    // 1. Register any file whose export matches the theme schema
-    for (const mod of Object.values(themeModules)) {
-      const candidate = mod.default ?? Object.values(mod).find(isValidTheme);
-      if (isValidTheme(candidate)) {
-        this.register({ ...candidate, builtIn: true });
+    this._discoverThemes(DISCOVERED_THEME_MODULES);
+
+    const targetId =
+      initialThemeId && this.themes.has(initialThemeId)
+        ? initialThemeId
+        : this.themes.keys().next().value ?? null;
+
+    if (targetId) {
+      this.setTheme(targetId);
+    }
+  }
+
+  _discoverThemes(modules) {
+    for (const mod of Object.values(modules)) {
+      const def = mod?.default ?? mod;
+      if (def && typeof def.id === 'string' && def.tokens && typeof def.tokens === 'object') {
+        this.install(def);
       }
     }
-
-    // 2. Load runtime-imported user themes from localStorage
-    this._loadInstalledThemes();
-
-    // 3. Apply saved -> explicit default -> first discovered theme
-    const fallbackId =
-      defaultThemeId && this.themes.has(defaultThemeId)
-        ? defaultThemeId
-        : this.themes.keys().next().value;
-
-    const savedId = localStorage.getItem(STORAGE_ACTIVE_KEY);
-    if (savedId && this.themes.has(savedId)) {
-      this.apply(savedId);
-    } else if (fallbackId) {
-      this.apply(fallbackId);
-    }
   }
 
-  register(theme) {
-    if (!isValidTheme(theme)) return false;
-    this.themes.set(theme.id, theme);
-    return true;
+  install(themeDef) {
+    if (!themeDef || typeof themeDef.id !== 'string' || typeof themeDef.tokens !== 'object') {
+      throw new Error('Invalid theme definition: requires string "id" and object "tokens".');
+    }
+    this.themes.set(themeDef.id, {
+      id: themeDef.id,
+      name: themeDef.name ?? themeDef.id,
+      tokens: { ...themeDef.tokens },
+    });
+    this.eventBus?.emit('theme:installed', { id: themeDef.id });
+    return themeDef.id;
   }
 
-  install(themeJson) {
-    const theme = typeof themeJson === 'string' ? JSON.parse(themeJson) : themeJson;
-    if (!isValidTheme(theme)) {
-      throw new Error('Invalid theme: requires string id, string name, and tokens object.');
+  async installFromUrl(url) {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch theme JSON from "${url}" (${response.status}).`);
     }
-
-    const customTheme = { ...theme, builtIn: false };
-    this.themes.set(customTheme.id, customTheme);
-    this._saveInstalledThemes();
-    this.apply(customTheme.id);
-    return customTheme;
+    const json = await response.json();
+    return this.install(json);
   }
 
   uninstall(id) {
-    const theme = this.themes.get(id);
-    if (!theme || theme.builtIn) return false;
-
-    this.themes.delete(id);
-    this._saveInstalledThemes();
-
-    if (this.activeId === id) {
-      const nextId = this.themes.keys().next().value;
-      if (nextId) this.apply(nextId);
+    const removed = this.themes.delete(id);
+    if (removed && this.activeThemeId === id) {
+      const nextId = this.themes.keys().next().value ?? null;
+      this.activeThemeId = null;
+      if (nextId) {
+        this.setTheme(nextId);
+      }
     }
-    return true;
+    return removed;
   }
 
-  apply(id) {
+  listThemes() {
+    return [...this.themes.values()].map(({ id, name }) => ({ id, name }));
+  }
+
+  setTheme(id) {
     const theme = this.themes.get(id);
     if (!theme) return false;
 
-    const root = document.documentElement;
-    root.dataset.theme = theme.id;
-
-    for (const oldToken of this._appliedTokens) {
-      if (!(oldToken in theme.tokens)) {
-        root.style.removeProperty(oldToken);
-      }
-    }
-
     for (const [token, value] of Object.entries(theme.tokens)) {
-      root.style.setProperty(token, value);
+      this.root.style.setProperty(token, String(value));
     }
-    this._appliedTokens = Object.keys(theme.tokens);
 
-    this.activeId = id;
-    localStorage.setItem(STORAGE_ACTIVE_KEY, id);
-    this.eventBus?.emit(EVENTS.THEME_CHANGED, theme);
+    this.activeThemeId = theme.id;
+    this.eventBus?.emit('theme:applied', {
+      id: theme.id,
+      name: theme.name,
+      tokens: theme.tokens,
+    });
     return true;
-  }
-
-  cycle() {
-    const ids = Array.from(this.themes.keys());
-    if (ids.length === 0) return;
-    const nextIdx = (ids.indexOf(this.activeId) + 1) % ids.length;
-    this.apply(ids[nextIdx]);
-  }
-
-  list() {
-    return Array.from(this.themes.values());
-  }
-
-  _saveInstalledThemes() {
-    const custom = this.list().filter((t) => !t.builtIn);
-    localStorage.setItem(STORAGE_CUSTOM_KEY, JSON.stringify(custom));
-  }
-
-  _loadInstalledThemes() {
-    try {
-      const raw = localStorage.getItem(STORAGE_CUSTOM_KEY);
-      if (!raw) return;
-      JSON.parse(raw).forEach((t) => {
-        if (isValidTheme(t)) {
-          this.themes.set(t.id, { ...t, builtIn: false });
-        }
-      });
-    } catch {
-      localStorage.removeItem(STORAGE_CUSTOM_KEY);
-    }
   }
 }

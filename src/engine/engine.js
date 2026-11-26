@@ -1,86 +1,139 @@
-import { EventBus, EVENTS } from './eventBus.js';
-
 export class Engine {
-  constructor(canvas) {
-    this.canvas = canvas;
-    this.eventBus = new EventBus();
-    this.systems = new Map();
+  constructor({ canvas, eventBus, config = {} }) {
+    if (!canvas) throw new Error('Engine requires a valid canvas element.');
+    if (!eventBus) throw new Error('Engine requires an EventBus instance.');
 
-    this._running = false;
+    this.canvas = canvas;
+    this.eventBus = eventBus;
+
+    this.maxDelta = config.maxDelta ?? 0.05;
+    this.pixelRatioCap = config.pixelRatioCap ?? 2;
+
+    this.width = Math.max(1, canvas.clientWidth || window.innerWidth);
+    this.height = Math.max(1, canvas.clientHeight || window.innerHeight);
+    this.pixelRatio = Math.min(window.devicePixelRatio || 1, this.pixelRatioCap);
+
+    this.elapsed = 0;
+    this.delta = 0;
+    this.frameCount = 0;
+    this.running = false;
+
     this._rafId = null;
     this._lastTime = 0;
+    this._subsystems = new Map();
+    this._ordered = [];
 
-    this.width = canvas.clientWidth || window.innerWidth;
-    this.height = canvas.clientHeight || window.innerHeight;
-
-    this._resizeObserver = new ResizeObserver(() => this._handleResize());
+    this._resizeObserver = new ResizeObserver(() => this._syncSize(true));
     this._resizeObserver.observe(this.canvas);
+
+    this.eventBus.on('settings:graphicsChanged', (settings = {}) => {
+      if (typeof settings.pixelRatioCap === 'number' && settings.pixelRatioCap > 0) {
+        this.pixelRatioCap = settings.pixelRatioCap;
+        this._syncSize(true);
+      }
+      if (typeof settings.maxDelta === 'number' && settings.maxDelta > 0) {
+        this.maxDelta = settings.maxDelta;
+      }
+    });
   }
 
-  register(name, system) {
-    this.systems.set(name, system);
-    if (typeof system.init === 'function') {
-      system.init(this);
+  register(name, instance, priority = 50) {
+    if (this._subsystems.has(name)) {
+      throw new Error(`Subsystem "${name}" is already registered.`);
     }
-    return system;
+    this._subsystems.set(name, { name, instance, priority });
+    this._ordered = [...this._subsystems.values()].sort((a, b) => a.priority - b.priority);
+    return instance;
   }
 
   get(name) {
-    return this.systems.get(name);
+    return this._subsystems.get(name)?.instance ?? null;
+  }
+
+  _syncSize(force = false) {
+    const nextWidth = Math.max(1, Math.floor(this.canvas.clientWidth));
+    const nextHeight = Math.max(1, Math.floor(this.canvas.clientHeight));
+    const nextDpr = Math.min(window.devicePixelRatio || 1, this.pixelRatioCap);
+
+    if (
+      !force &&
+      nextWidth === this.width &&
+      nextHeight === this.height &&
+      nextDpr === this.pixelRatio
+    ) {
+      return;
+    }
+
+    this.width = nextWidth;
+    this.height = nextHeight;
+    this.pixelRatio = nextDpr;
+
+    for (const { instance } of this._ordered) {
+      instance.resize?.(this.width, this.height, this.pixelRatio);
+    }
+
+    this.eventBus.emit('engine:resize', {
+      width: this.width,
+      height: this.height,
+      pixelRatio: this.pixelRatio,
+    });
   }
 
   start() {
-    if (this._running) return;
-    this._running = true;
+    if (this.running) return;
+    this.running = true;
     this._lastTime = performance.now();
-    this._loop(this._lastTime);
+    this._syncSize(true);
+
+    const tick = (now) => {
+      if (!this.running) return;
+      this._rafId = requestAnimationFrame(tick);
+
+      const rawDt = (now - this._lastTime) / 1000;
+      this._lastTime = now;
+      this.delta = Math.min(Math.max(rawDt, 0), this.maxDelta);
+      this.elapsed += this.delta;
+      this.frameCount += 1;
+
+      const ctx = {
+        dt: this.delta,
+        elapsed: this.elapsed,
+        frame: this.frameCount,
+        width: this.width,
+        height: this.height,
+        pixelRatio: this.pixelRatio,
+      };
+
+      for (const { instance } of this._ordered) {
+        instance.update?.(this.delta, ctx);
+      }
+
+      this.eventBus.emit('engine:tick', ctx);
+
+      this.get('inputManager')?.flushFrame?.();
+    };
+
+    this._rafId = requestAnimationFrame(tick);
   }
 
   stop() {
-    this._running = false;
+    this.running = false;
     if (this._rafId !== null) {
       cancelAnimationFrame(this._rafId);
       this._rafId = null;
     }
   }
 
-  _handleResize() {
-    const w = this.canvas.clientWidth || window.innerWidth;
-    const h = this.canvas.clientHeight || window.innerHeight;
-    if (w === 0 || h === 0) return;
-    if (w === this.width && h === this.height) return;
+  dispose() {
+    this.stop();
+    this._resizeObserver.disconnect();
 
-    this.width = w;
-    this.height = h;
-
-    for (const system of this.systems.values()) {
-      if (typeof system.resize === 'function') {
-        system.resize(w, h);
-      }
+    for (const { instance } of [...this._ordered].reverse()) {
+      instance.dispose?.();
     }
 
-    this.eventBus.emit(EVENTS.ENGINE_RESIZE, { width: w, height: h });
-
-    const pipeline = this.get('renderPipeline');
-    pipeline?.render?.(0);
-  }
-
-  _loop(now) {
-    if (!this._running) return;
-    this._rafId = requestAnimationFrame((t) => this._loop(t));
-
-    const dt = Math.min((now - this._lastTime) / 1000, 0.1);
-    this._lastTime = now;
-
-    for (const system of this.systems.values()) {
-      if (typeof system.update === 'function') {
-        system.update(dt);
-      }
-    }
-
-    const pipeline = this.get('renderPipeline');
-    if (pipeline) {
-      pipeline.render(dt);
-    }
+    this._subsystems.clear();
+    this._ordered = [];
+    this.eventBus.clear();
   }
 }

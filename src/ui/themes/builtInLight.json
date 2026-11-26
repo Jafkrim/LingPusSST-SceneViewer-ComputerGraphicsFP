@@ -1,0 +1,31 @@
+{
+  "id": "builtInLight",
+  "name": "Built-in Light",
+  "tokens": {
+    "--bg-viewport": "#e2e8f0",
+    "--bg-panel": "#f8fafc",
+    "--bg-panel-header": "#edf2f7",
+    "--bg-input": "#ffffff",
+    "--bg-hover": "#dbeafe",
+    "--bg-overlay": "rgba(15, 23, 42, 0.35)",
+    "--border-subtle": "#cbd5e1",
+    "--border-widget": "#94a3b8",
+    "--text-primary": "#0f172a",
+    "--text-secondary": "#475569",
+    "--text-muted": "#64748b",
+    "--text-on-accent": "#ffffff",
+    "--accent-primary": "#2563eb",
+    "--accent-primary-hover": "#1d4ed8",
+    "--status-warning": "#d97706",
+    "--status-danger": "#dc2626",
+    "--axis-x": "#ff0000",
+    "--axis-y": "#00ff00",
+    "--axis-z": "#0000ff",
+    "--viewport-grid-minor": "#cbd5e1",
+    "--viewport-grid-major": "#94a3b8",
+    "--viewport-grid-opacity": "0.8",
+    "--viewport-axis-x": "#ff0000",
+    "--viewport-axis-y": "#00ff00",
+    "--viewport-axis-z": "#0000ff"
+  }
+}

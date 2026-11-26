@@ -1,223 +1,318 @@
 import * as THREE from 'three';
-import { EVENTS } from '@/engine/eventBus.js';
 
-const INFINITE_GRID_VERTEX = /* glsl */ `
-  varying vec3 vWorldPos;
+function readThemeColor(styles, token, fallback) {
+  const raw = styles.getPropertyValue(token).trim();
+  return raw || fallback;
+}
 
-  void main() {
-    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-    vWorldPos = worldPosition.xyz;
-    gl_Position = projectionMatrix * viewMatrix * worldPosition;
-  }
-`;
-
-const INFINITE_GRID_FRAGMENT = /* glsl */ `
-  varying vec3 vWorldPos;
-
-  uniform float uGridScale1;
-  uniform float uGridScale2;
-  uniform float uFadeDistance;
-  uniform float uOpacity;
-  uniform vec3 uColorMinor;
-  uniform vec3 uColorMajor;
-  uniform vec3 uColorAxisX;
-  uniform vec3 uColorAxisZ;
-
-  float gridFactor(vec2 coord, float scale) {
-    vec2 scaled = coord / scale;
-    vec2 derivative = fwidth(scaled);
-    vec2 grid = abs(fract(scaled - 0.5) - 0.5) / max(derivative, vec2(1e-5));
-    float line = min(grid.x, grid.y);
-    return 1.0 - min(line, 1.0);
-  }
-
-  void main() {
-    vec2 coord = vWorldPos.xz;
-
-    float minor = gridFactor(coord, uGridScale1);
-    float major = gridFactor(coord, uGridScale2);
-
-    float dist = length(vWorldPos.xz - cameraPosition.xz);
-    float fade = 1.0 - smoothstep(uFadeDistance * 0.35, uFadeDistance, dist);
-
-    vec3 viewDir = normalize(cameraPosition - vWorldPos);
-    float grazing = smoothstep(0.02, 0.18, abs(viewDir.y));
-
-    vec3 color = mix(uColorMinor, uColorMajor, major);
-    float alpha = max(minor * 0.45, major * 0.85);
-
-    vec2 axisDeriv = max(fwidth(coord), vec2(1e-5));
-    float axisX = 1.0 - min(abs(coord.y) / (axisDeriv.y * 1.5), 1.0);
-    float axisZ = 1.0 - min(abs(coord.x) / (axisDeriv.x * 1.5), 1.0);
-
-    if (axisX > 0.01) {
-      color = mix(color, uColorAxisX, axisX);
-      alpha = max(alpha, axisX * 0.95);
-    }
-    if (axisZ > 0.01) {
-      color = mix(color, uColorAxisZ, axisZ);
-      alpha = max(alpha, axisZ * 0.95);
-    }
-
-    alpha *= fade * grazing * uOpacity;
-    if (alpha < 0.005) discard;
-
-    gl_FragColor = vec4(color, alpha);
-  }
-`;
+function readThemeNumber(styles, token, fallback) {
+  const parsed = parseFloat(styles.getPropertyValue(token).trim());
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
 
 export class ViewportGuides {
-  constructor(scene, eventBus = null, options = {}) {
+  constructor({ scene, eventBus, config = {} }) {
+    if (!scene || !eventBus) {
+      throw new Error('ViewportGuides requires scene and eventBus.');
+    }
+
     this.scene = scene;
     this.eventBus = eventBus;
+    this.visible = config.visible ?? true;
+    this._hudHidden = false;
 
     this.group = new THREE.Group();
     this.group.name = 'ViewportGuides';
-    this.group.userData.excludeFromSave = true;
+    this._applyVisibility();
 
-    this.axesVisible = options.axesVisible ?? true;
-    this.axisXColor = new THREE.Color(options.axisXColor ?? 0xd94848);
-    this.axisZColor = new THREE.Color(options.axisZColor ?? 0x3b82f6);
-    this.majorColor = new THREE.Color(options.majorColor ?? 0x7a7a7a);
+    this._minorSpacing = config.minorSpacing ?? 1.0;
+    this._majorEvery = config.majorEvery ?? 10;
+    this._axisThickness = config.axisThickness ?? 0.025;
+    this._fadeStart = config.fadeStart ?? 80;
+    this._fadeEnd = config.fadeEnd ?? 350;
+    this._axisExtent = config.axisExtent ?? 2000;
 
-    const fadeDistance = options.fadeDistance ?? 140;
-    const planeSize = fadeDistance * 2.5;
+    const styles = getComputedStyle(document.documentElement);
+    const initialMinor = config.minorColor ?? readThemeColor(styles, '--viewport-grid-minor', '#525252');
+    const initialMajor = config.majorColor ?? readThemeColor(styles, '--viewport-grid-major', '#7a7a7a');
+    const initialAxisX = config.axisXColor ?? readThemeColor(styles, '--viewport-axis-x', '#ff0000');
+    const initialAxisY = config.axisYColor ?? readThemeColor(styles, '--viewport-axis-y', '#00ff00');
+    const initialAxisZ = config.axisZColor ?? readThemeColor(styles, '--viewport-axis-z', '#0000ff');
+    const initialOpacity = THREE.MathUtils.clamp(
+      config.opacity ?? readThemeNumber(styles, '--viewport-grid-opacity', 0.8),
+      0,
+      1
+    );
 
+    this._gridUniforms = {
+      uCameraPos: { value: new THREE.Vector3() },
+      uMinorColor: { value: new THREE.Color(initialMinor) },
+      uMajorColor: { value: new THREE.Color(initialMajor) },
+      uAxisXColor: { value: new THREE.Color(initialAxisX) },
+      uAxisYColor: { value: new THREE.Color(initialAxisY) },
+      uAxisZColor: { value: new THREE.Color(initialAxisZ) },
+      uOpacity: { value: initialOpacity },
+      uMinorScale: { value: 1 / this._minorSpacing },
+      uMajorScale: { value: 1 / (this._minorSpacing * this._majorEvery) },
+      uAxisWidth: { value: this._axisThickness },
+      uFadeStart: { value: this._fadeStart },
+      uFadeEnd: { value: this._fadeEnd },
+    };
+
+    this.gridMesh = this._createInfiniteGridPlane();
+    this.axesGroup = this._createInfiniteAxes({
+      x: initialAxisX,
+      y: initialAxisY,
+      z: initialAxisZ,
+      opacity: initialOpacity,
+    });
+
+    this.group.add(this.gridMesh, this.axesGroup);
+    this.scene.add(this.group);
+
+    this._unsubs = [
+      this.eventBus.on('theme:applied', () => this.syncThemeTokens()),
+      this.eventBus.on('ui:hudVisibilityChanged', ({ hidden } = {}) => {
+        this._hudHidden = Boolean(hidden);
+        this._applyVisibility();
+      }),
+      this.eventBus.on('guides:setVisible', ({ visible } = {}) => {
+        if (typeof visible === 'boolean') {
+          this.visible = visible;
+          this._applyVisibility();
+        }
+      }),
+      this.eventBus.on('settings:guidesChanged', (patch = {}) => {
+        if (typeof patch.minorSpacing === 'number' && patch.minorSpacing > 0) {
+          this._minorSpacing = patch.minorSpacing;
+          this._gridUniforms.uMinorScale.value = 1 / this._minorSpacing;
+          this._gridUniforms.uMajorScale.value = 1 / (this._minorSpacing * this._majorEvery);
+        }
+        if (typeof patch.majorEvery === 'number' && patch.majorEvery > 0) {
+          this._majorEvery = patch.majorEvery;
+          this._gridUniforms.uMajorScale.value = 1 / (this._minorSpacing * this._majorEvery);
+        }
+        if (typeof patch.fadeStart === 'number') {
+          this._fadeStart = patch.fadeStart;
+          this._gridUniforms.uFadeStart.value = patch.fadeStart;
+          for (const mat of Object.values(this._axisMaterials)) {
+            mat.uniforms.uFadeStart.value = patch.fadeStart;
+          }
+        }
+        if (typeof patch.fadeEnd === 'number') {
+          this._fadeEnd = patch.fadeEnd;
+          this._gridUniforms.uFadeEnd.value = patch.fadeEnd;
+          for (const mat of Object.values(this._axisMaterials)) {
+            mat.uniforms.uFadeEnd.value = patch.fadeEnd;
+          }
+        }
+      }),
+    ];
+
+    this.syncThemeTokens();
+  }
+
+  _applyVisibility() {
+    this.group.visible = this.visible && !this._hudHidden;
+  }
+
+  _createInfiniteGridPlane() {
+    const planeSize = Math.max(1000, this._fadeEnd * 4);
     const geometry = new THREE.PlaneGeometry(planeSize, planeSize, 1, 1);
     geometry.rotateX(-Math.PI / 2);
 
-    this.gridMaterial = new THREE.ShaderMaterial({
-      vertexShader: INFINITE_GRID_VERTEX,
-      fragmentShader: INFINITE_GRID_FRAGMENT,
+    const material = new THREE.ShaderMaterial({
+      uniforms: this._gridUniforms,
       transparent: true,
       depthWrite: false,
       side: THREE.DoubleSide,
+      vertexShader: /* glsl */ `
+        varying vec3 vWorldPos;
+        void main() {
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vWorldPos = worldPos.xyz;
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        precision highp float;
+        varying vec3 vWorldPos;
+
+        uniform vec3 uCameraPos;
+        uniform vec3 uMinorColor;
+        uniform vec3 uMajorColor;
+        uniform float uOpacity;
+        uniform float uMinorScale;
+        uniform float uMajorScale;
+        uniform float uFadeStart;
+        uniform float uFadeEnd;
+
+        float gridLineFactor(vec2 coord, float scale) {
+          vec2 p = coord * scale;
+          vec2 fw = fwidth(p);
+          vec2 grid = abs(fract(p - 0.5) - 0.5) / max(fw, vec2(1e-5));
+          float line = min(grid.x, grid.y);
+          return 1.0 - min(line, 1.0);
+        }
+
+        void main() {
+          vec2 xz = vWorldPos.xz;
+          float dist = length(xz - uCameraPos.xz);
+          float distFade = 1.0 - smoothstep(uFadeStart, uFadeEnd, dist);
+          if (distFade <= 0.001) discard;
+
+          float minor = gridLineFactor(xz, uMinorScale);
+          float major = gridLineFactor(xz, uMajorScale);
+
+          vec3 col = mix(uMinorColor, uMajorColor, major);
+          float alpha = max(minor * 0.45, major * 0.85);
+
+          float finalAlpha = alpha * distFade * uOpacity;
+          if (finalAlpha <= 0.002) discard;
+
+          gl_FragColor = vec4(col, finalAlpha);
+        }
+      `,
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = 'InfiniteFloorGrid';
+    mesh.renderOrder = -1;
+    mesh.frustumCulled = false;
+    return mesh;
+  }
+
+  _createAxisLine(points, colorValue, opacity, name) {
+    const curve = new THREE.LineCurve3(points[0], points[1]);
+    const sampled = curve.getPoints(128);
+    const geo = new THREE.BufferGeometry().setFromPoints(sampled);
+
+    const mat = new THREE.ShaderMaterial({
       uniforms: {
-        uGridScale1: { value: options.minorStep ?? 1.0 },
-        uGridScale2: { value: options.majorStep ?? 10.0 },
-        uFadeDistance: { value: fadeDistance },
-        uOpacity: { value: options.opacity ?? 1.0 },
-        uColorMinor: { value: new THREE.Color(options.minorColor ?? 0x525252) },
-        uColorMajor: { value: this.majorColor.clone() },
-        uColorAxisX: { value: this.axisXColor.clone() },
-        uColorAxisZ: { value: this.axisZColor.clone() },
+        uColor: { value: new THREE.Color(colorValue) },
+        uCameraPos: this._gridUniforms.uCameraPos,
+        uOpacity: { value: opacity },
+        uFadeStart: { value: this._fadeStart },
+        uFadeEnd: { value: this._fadeEnd },
       },
-    });
-
-    this.grid = new THREE.Mesh(geometry, this.gridMaterial);
-    this.grid.position.y = 0.001;
-    this.grid.frustumCulled = false;
-    this.grid.renderOrder = -1;
-
-    // Follow whichever camera Three.js is currently rendering without cross-system dependencies
-    this.grid.onBeforeRender = (_renderer, _scene, camera) => {
-      if (!camera?.position) return;
-      this.grid.position.x = camera.position.x;
-      this.grid.position.z = camera.position.z;
-    };
-
-    this.group.add(this.grid);
-
-    // Unlimited vertical Y-axis line along X = 0, Z = 0
-    const ySpan = options.yAxisSpan ?? 10000;
-    const yAxisGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, -ySpan, 0),
-      new THREE.Vector3(0, ySpan, 0),
-    ]);
-    this.yAxisMat = new THREE.LineBasicMaterial({
-      color: options.axisYColor ?? 0x22c55e,
       transparent: true,
-      opacity: (options.opacity ?? 1.0) * 0.85,
+      depthWrite: false,
+      vertexShader: /* glsl */ `
+        varying vec3 vWorldPos;
+        void main() {
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vWorldPos = worldPos.xyz;
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        precision highp float;
+        varying vec3 vWorldPos;
+
+        uniform vec3 uColor;
+        uniform vec3 uCameraPos;
+        uniform float uOpacity;
+        uniform float uFadeStart;
+        uniform float uFadeEnd;
+
+        void main() {
+          float dist = distance(vWorldPos, uCameraPos);
+          float fade = 1.0 - smoothstep(uFadeStart, uFadeEnd, dist);
+          float alpha = fade * uOpacity;
+          if (alpha <= 0.002) discard;
+          gl_FragColor = vec4(uColor, alpha);
+        }
+      `,
     });
-    this.yAxisLine = new THREE.Line(yAxisGeo, this.yAxisMat);
-    this.yAxisLine.frustumCulled = false;
-    this.yAxisLine.visible = this.axesVisible;
-    this.group.add(this.yAxisLine);
 
-    this.scene.add(this.group);
-    this._unsubscribers = this._bindEvents();
+    const line = new THREE.Line(geo, mat);
+    line.name = name;
+    line.frustumCulled = false;
+    return { line, geo, mat };
   }
 
-  update(_dt) {
-    // Intentionally empty: Engine._loop passes dt (number), while camera tracking runs in onBeforeRender
-  }
+  _createInfiniteAxes({ x, y, z, opacity }) {
+    const group = new THREE.Group();
+    group.name = 'InfiniteWorldAxes';
+    const ext = this._axisExtent;
 
-  setStyle({ minorColor, majorColor, axisXColor, axisYColor, axisZColor, opacity } = {}) {
-    if (minorColor !== undefined) {
-      this.gridMaterial.uniforms.uColorMinor.value.set(minorColor);
-    }
-    if (majorColor !== undefined) {
-      this.majorColor.set(majorColor);
-      this.gridMaterial.uniforms.uColorMajor.value.copy(this.majorColor);
-      if (!this.axesVisible) {
-        this.gridMaterial.uniforms.uColorAxisX.value.copy(this.majorColor);
-        this.gridMaterial.uniforms.uColorAxisZ.value.copy(this.majorColor);
-      }
-    }
-    if (axisXColor !== undefined) {
-      this.axisXColor.set(axisXColor);
-      if (this.axesVisible) this.gridMaterial.uniforms.uColorAxisX.value.copy(this.axisXColor);
-    }
-    if (axisZColor !== undefined) {
-      this.axisZColor.set(axisZColor);
-      if (this.axesVisible) this.gridMaterial.uniforms.uColorAxisZ.value.copy(this.axisZColor);
-    }
-    if (axisYColor !== undefined) {
-      this.yAxisMat.color.set(axisYColor);
-    }
-    if (typeof opacity === 'number') {
-      const clamped = Math.max(0, Math.min(1, opacity));
-      this.gridMaterial.uniforms.uOpacity.value = clamped;
-      this.yAxisMat.opacity = clamped * 0.85;
-    }
-  }
-
-  setGridVisible(visible) {
-    this.grid.visible = Boolean(visible);
-  }
-
-  setAxesVisible(visible) {
-    this.axesVisible = Boolean(visible);
-    this.yAxisLine.visible = this.axesVisible;
-    this.gridMaterial.uniforms.uColorAxisX.value.copy(
-      this.axesVisible ? this.axisXColor : this.majorColor
+    const xAxis = this._createAxisLine(
+      [new THREE.Vector3(-ext, 0, 0), new THREE.Vector3(ext, 0, 0)],
+      x,
+      opacity,
+      'WorldAxisX'
     );
-    this.gridMaterial.uniforms.uColorAxisZ.value.copy(
-      this.axesVisible ? this.axisZColor : this.majorColor
+    const yAxis = this._createAxisLine(
+      [new THREE.Vector3(0, -ext, 0), new THREE.Vector3(0, ext, 0)],
+      y,
+      opacity,
+      'WorldAxisY'
     );
+    const zAxis = this._createAxisLine(
+      [new THREE.Vector3(0, 0, -ext), new THREE.Vector3(0, 0, ext)],
+      z,
+      opacity,
+      'WorldAxisZ'
+    );
+
+    this._axisMaterials = { x: xAxis.mat, y: yAxis.mat, z: zAxis.mat };
+    this._axisGeometries = [xAxis.geo, yAxis.geo, zAxis.geo];
+
+    group.add(xAxis.line, yAxis.line, zAxis.line);
+    return group;
   }
 
-  _bindEvents() {
-    if (!this.eventBus) return [];
+  syncThemeTokens() {
+    const styles = getComputedStyle(document.documentElement);
+    const minor = styles.getPropertyValue('--viewport-grid-minor').trim();
+    const major = styles.getPropertyValue('--viewport-grid-major').trim();
+    const opacity = readThemeNumber(styles, '--viewport-grid-opacity', NaN);
+    const axX = styles.getPropertyValue('--viewport-axis-x').trim();
+    const axY = styles.getPropertyValue('--viewport-axis-y').trim();
+    const axZ = styles.getPropertyValue('--viewport-axis-z').trim();
 
-    return [
-      this.eventBus.on('viewport:toggleGrid', ({ visible }) => this.setGridVisible(visible)),
-      this.eventBus.on('viewport:toggleAxes', ({ visible }) => this.setAxesVisible(visible)),
-      this.eventBus.on('viewport:setGridStyle', (style) => this.setStyle(style)),
-      this.eventBus.on(EVENTS.THEME_CHANGED, (theme) => {
-        const tokens = theme?.tokens;
-        if (!tokens) return;
+    if (minor) this._gridUniforms.uMinorColor.value.setStyle(minor);
+    if (major) this._gridUniforms.uMajorColor.value.setStyle(major);
+    if (!Number.isNaN(opacity)) {
+      const clamped = THREE.MathUtils.clamp(opacity, 0, 1);
+      this._gridUniforms.uOpacity.value = clamped;
+      this._axisMaterials.x.uniforms.uOpacity.value = clamped;
+      this._axisMaterials.y.uniforms.uOpacity.value = clamped;
+      this._axisMaterials.z.uniforms.uOpacity.value = clamped;
+    }
+    if (axX) {
+      this._gridUniforms.uAxisXColor.value.setStyle(axX);
+      this._axisMaterials.x.uniforms.uColor.value.setStyle(axX);
+    }
+    if (axY) {
+      this._gridUniforms.uAxisYColor.value.setStyle(axY);
+      this._axisMaterials.y.uniforms.uColor.value.setStyle(axY);
+    }
+    if (axZ) {
+      this._gridUniforms.uAxisZColor.value.setStyle(axZ);
+      this._axisMaterials.z.uniforms.uColor.value.setStyle(axZ);
+    }
+  }
 
-        const opacity = parseFloat(tokens['--viewport-grid-opacity']);
-        this.setStyle({
-          minorColor: tokens['--viewport-grid-minor'] ?? '#525252',
-          majorColor: tokens['--viewport-grid-major'] ?? '#7a7a7a',
-          axisXColor: tokens['--viewport-axis-x'] ?? '#d94848',
-          axisYColor: tokens['--viewport-axis-y'] ?? '#22c55e',
-          axisZColor: tokens['--viewport-axis-z'] ?? '#3b82f6',
-          opacity: Number.isFinite(opacity) ? opacity : 1.0,
-        });
-      }),
-    ];
+  update(_dt, ctx) {
+    if (!this.group.visible) return;
+    const camPos = ctx?.cameraPosition;
+    if (camPos) {
+      this._gridUniforms.uCameraPos.value.copy(camPos);
+      const step = this._minorSpacing * this._majorEvery;
+      const snappedX = Math.round(camPos.x / step) * step;
+      const snappedZ = Math.round(camPos.z / step) * step;
+      this.gridMesh.position.set(snappedX, 0, snappedZ);
+    }
   }
 
   dispose() {
-    this._unsubscribers?.forEach((unsub) => unsub?.());
-    this.grid.onBeforeRender = null;
-    this.grid.geometry?.dispose();
-    this.gridMaterial?.dispose();
-    this.yAxisLine.geometry?.dispose();
-    this.yAxisMat?.dispose();
+    for (const u of this._unsubs) u?.();
+    this._unsubs = [];
     this.scene.remove(this.group);
+    this.gridMesh.geometry?.dispose?.();
+    this.gridMesh.material?.dispose?.();
+    for (const geo of this._axisGeometries) geo?.dispose?.();
+    for (const mat of Object.values(this._axisMaterials)) mat?.dispose?.();
   }
 }
