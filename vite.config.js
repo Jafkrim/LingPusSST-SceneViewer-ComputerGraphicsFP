@@ -2,6 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'vite';
 
+function readUiConfig(configRoot) {
+  try {
+    const raw = fs.readFileSync(path.join(configRoot, 'uiSettings.json'), 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
 function configFilesMiddleware() {
   const configRoot = path.resolve(import.meta.dirname, 'src/config');
 
@@ -82,83 +91,119 @@ function configFilesMiddleware() {
 
 function contentManifestPlugin() {
   const publicRoot = path.resolve(import.meta.dirname, 'public');
-  const ALLOWED_ROOTS = ['engineContent', 'userContent'];
-  const ALLOWED_FOLDERS = ['environments', 'models', 'prefabs', 'scenes'];
-  const ALLOWED_EXTS = [
-    '.scene.json',
-    '.prefab.json',
-    '.exr',
-    '.hdr',
-    '.glb',
-    '.gltf',
-    '.bin',
-    '.png',
-    '.jpg',
-    '.jpeg',
-    '.webp',
-    '.tga',
-  ];
+  const configRoot = path.resolve(import.meta.dirname, 'src/config');
 
-  function getAssetExtension(filename) {
-    const lower = filename.toLowerCase();
-    return ALLOWED_EXTS.find((ext) => lower.endsWith(ext)) ?? null;
+  function getContentRules() {
+    const uiCfg = readUiConfig(configRoot);
+    const cbCfg = uiCfg.contentBrowser ?? {};
+    const saveCfg = uiCfg.sceneSave ?? {};
+
+    const categories = Array.isArray(cbCfg.categories) ? cbCfg.categories : [];
+    const allExts = categories
+      .flatMap((c) => (Array.isArray(c.extensions) ? c.extensions : []))
+      .map((e) => e.toLowerCase())
+      .sort((a, b) => b.length - a.length);
+
+    const folderRules = {};
+    for (const [folderName, exts] of Object.entries(cbCfg.folderRules ?? {})) {
+      folderRules[folderName.toLowerCase()] = Array.isArray(exts)
+        ? exts.map((e) => e.toLowerCase()).sort((a, b) => b.length - a.length)
+        : [];
+    }
+
+    return {
+      allExts,
+      folderRules,
+      sceneExt: String(saveCfg.extension ?? '.scene.json').toLowerCase(),
+      defaultSaveDir: String(saveCfg.defaultDirectory ?? '').replace(/^\/+|\/+$/g, ''),
+      defaultSaveName: String(saveCfg.defaultName ?? 'untitled'),
+    };
   }
 
-  function scanPublicContent() {
-    const packs = [];
+  function matchAllowedExt(filename, folderName, rules) {
+    const lower = filename.toLowerCase();
+    const scopedExts = rules.folderRules[String(folderName ?? '').toLowerCase()] ?? rules.allExts;
+    return scopedExts.find((ext) => lower.endsWith(ext)) ?? null;
+  }
 
-    for (const scope of ALLOWED_ROOTS) {
-      const scopeDir = path.join(publicRoot, scope);
-      if (!fs.existsSync(scopeDir)) continue;
+  function scanTreeNode(absDir, relLogicalPath, activeFolderRule, rules) {
+    const node = {
+      name: relLogicalPath ? path.posix.basename(relLogicalPath) : 'public',
+      logicalPath: relLogicalPath,
+      folderRule: activeFolderRule,
+      directories: [],
+      files: [],
+    };
 
-      const packEntries = fs
-        .readdirSync(scopeDir, { withFileTypes: true })
-        .filter((d) => d.isDirectory());
+    if (!fs.existsSync(absDir)) return node;
 
-      for (const packDir of packEntries) {
-        const packName = packDir.name;
-        const folders = {};
+    const entries = fs
+      .readdirSync(absDir, { withFileTypes: true })
+      .sort((a, b) => a.name.localeCompare(b.name));
 
-        for (const folder of ALLOWED_FOLDERS) {
-          const folderDir = path.join(scopeDir, packName, folder);
-          const items = [];
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      const fullPath = path.join(absDir, entry.name);
+      const childLogical = relLogicalPath ? `${relLogicalPath}/${entry.name}` : entry.name;
 
-          if (fs.existsSync(folderDir)) {
-            const walk = (dir, relBase = '') => {
-              for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-                const full = path.join(dir, entry.name);
-                const rel = relBase ? `${relBase}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        const lowerName = entry.name.toLowerCase();
+        const nextFolderRule = Object.prototype.hasOwnProperty.call(rules.folderRules, lowerName)
+          ? lowerName
+          : activeFolderRule;
 
-                if (entry.isDirectory()) {
-                  walk(full, rel);
-                } else {
-                  const ext = getAssetExtension(entry.name);
-                  if (!ext) continue;
-                  const logicalPath = `${scope}/${packName}/${folder}/${rel}`;
-                  items.push({
-                    name: entry.name.slice(0, -ext.length),
-                    fileName: entry.name,
-                    ext,
-                    folder,
-                    scope,
-                    pack: packName,
-                    logicalPath,
-                    url: `/${logicalPath}`,
-                  });
-                }
-              }
-            };
-            walk(folderDir);
-          }
+        node.directories.push(scanTreeNode(fullPath, childLogical, nextFolderRule, rules));
+      } else if (entry.isFile()) {
+        const ext = matchAllowedExt(entry.name, activeFolderRule, rules);
+        if (!ext) continue;
 
-          folders[folder] = items;
-        }
-
-        packs.push({ scope, pack: packName, folders });
+        node.files.push({
+          name: entry.name.slice(0, -ext.length),
+          fileName: entry.name,
+          ext,
+          folder: activeFolderRule ?? '',
+          logicalPath: childLogical,
+          url: `/${childLogical}`,
+        });
       }
     }
 
-    return { generatedAt: Date.now(), packs };
+    return node;
+  }
+
+  function scanPublicContent() {
+    const rules = getContentRules();
+    const tree = scanTreeNode(publicRoot, '', null, rules);
+    return {
+      generatedAt: Date.now(),
+      tree,
+    };
+  }
+
+  function resolvePublicSaveTarget(rawRelativePath, rules) {
+    const fallbackFile = `${rules.defaultSaveName}${rules.sceneExt}`;
+    const fallbackRel = rules.defaultSaveDir
+      ? `${rules.defaultSaveDir}/${fallbackFile}`
+      : fallbackFile;
+
+    let clean = String(rawRelativePath ?? fallbackRel)
+      .replace(/\\/g, '/')
+      .replace(/^\/+/, '')
+      .trim();
+
+    if (!clean) clean = fallbackRel;
+    if (!clean.toLowerCase().endsWith(rules.sceneExt)) {
+      clean = `${clean}${rules.sceneExt}`;
+    }
+
+    const target = path.resolve(publicRoot, clean);
+    const insidePublic = target === publicRoot || target.startsWith(`${publicRoot}${path.sep}`);
+    if (!insidePublic) return null;
+
+    return {
+      absPath: target,
+      logicalPath: path.relative(publicRoot, target).split(path.sep).join('/'),
+    };
   }
 
   return {
@@ -177,7 +222,7 @@ function contentManifestPlugin() {
 
       const scheduleBroadcast = (changedPath = '') => {
         const normalized = path.resolve(changedPath);
-        if (!normalized.startsWith(publicRoot)) return;
+        if (!normalized.startsWith(publicRoot) && !normalized.startsWith(configRoot)) return;
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(broadcastManifest, 120);
       };
@@ -187,6 +232,11 @@ function contentManifestPlugin() {
       server.watcher.on('unlink', scheduleBroadcast);
       server.watcher.on('addDir', scheduleBroadcast);
       server.watcher.on('unlinkDir', scheduleBroadcast);
+      server.watcher.on('change', (changedPath) => {
+        if (path.resolve(changedPath) === path.join(configRoot, 'uiSettings.json')) {
+          scheduleBroadcast(changedPath);
+        }
+      });
 
       server.middlewares.use('/__content-manifest', (req, res, next) => {
         if (req.method !== 'GET') return next();
@@ -205,6 +255,42 @@ function contentManifestPlugin() {
         res.write(`data: ${JSON.stringify(scanPublicContent())}\n\n`);
         sseClients.add(res);
         req.on('close', () => sseClients.delete(res));
+      });
+
+      server.middlewares.use('/__scene/save', (req, res, next) => {
+        if (req.method !== 'POST') return next();
+        let raw = '';
+        req.on('data', (chunk) => {
+          raw += chunk;
+        });
+        req.on('end', () => {
+          try {
+            const rules = getContentRules();
+            const body = JSON.parse(raw);
+            const resolved = resolvePublicSaveTarget(body?.logicalPath, rules);
+            if (!resolved || !body?.data || typeof body.data !== 'object') {
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ ok: false, error: 'Invalid scene save payload or path.' }));
+              return;
+            }
+
+            fs.mkdirSync(path.dirname(resolved.absPath), { recursive: true });
+            fs.writeFileSync(
+              resolved.absPath,
+              `${JSON.stringify(body.data, null, 2)}\n`,
+              'utf8'
+            );
+
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ ok: true, logicalPath: resolved.logicalPath }));
+          } catch (err) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ ok: false, error: err.message }));
+          }
+        });
       });
     },
     generateBundle() {

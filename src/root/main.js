@@ -1,6 +1,7 @@
 import { Engine } from '@/engine/engine.js';
 import { EventBus } from '@/engine/eventBus.js';
 import { InputManager } from '@/engine/inputManager.js';
+import { ResourceTracker } from '@/engine/resourceTracker.js';
 import { AssetResolver } from '@/engine/assetResolver.js';
 import { SceneManager } from '@/world/sceneManager.js';
 import { SpatialIndex } from '@/world/spatialIndex.js';
@@ -14,6 +15,9 @@ import { ViewportGuides } from '@/rendering/viewportGuides.js';
 import { RenderPipeline } from '@/rendering/renderPipeline.js';
 import { PRStyle } from '@/rendering/styles/prStyle.js';
 import { UIManager } from '@/ui/uiManager.js';
+import { BatchPoolManager } from '@/rendering/batchPoolManager.js';
+import { SelectionTool } from '@/tools/selectionTool.js';
+import { PlacementTool } from '@/tools/placementTool.js';
 
 const CAMERA_MODE_ACTIONS = Object.freeze({
   'camera.mode.surveyor': 'surveyor',
@@ -38,61 +42,77 @@ function main() {
     throw new Error('Root DOM elements (#viewport, #hud-root) not found.');
   }
 
+  window.addEventListener(
+    'contextmenu',
+    (e) => {
+      const target = e.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      ) {
+        return;
+      }
+      e.preventDefault();
+    },
+    { capture: true }
+  );
+
   const eventBus = new EventBus();
   const engine = new Engine({ canvas, eventBus });
-
-  try {
-    const savedRaw = localStorage.getItem('lingpus_sst_ui_settings_v1');
-    if (savedRaw) {
-      const saved = JSON.parse(savedRaw);
-      delete saved.panels;
-      delete saved.hudHidden;
-      if (saved.editorPanel) delete saved.editorPanel.activeTab;
-      localStorage.setItem('lingpus_sst_ui_settings_v1', JSON.stringify(saved));
-    }
-  } catch {
-    // Ignore storage errors
-  }
 
   const initialKeybinds = engine.getConfig('keybinds.json');
   const initialCameraSettings = engine.getConfig('cameraSettings.json');
   const initialUiSettings = engine.getConfig('uiSettings.json');
 
-  const inputManager = engine.register(
-    'inputManager',
-    new InputManager({ target: canvas, eventBus, keybinds: initialKeybinds }),
-    0
-  );
+  const inputManager = new InputManager({
+    target: canvas,
+    eventBus,
+    keybinds: initialKeybinds,
+  });
+  engine.register('inputManager', inputManager, 0);
 
-  const assetResolver = engine.register(
-    'assetResolver',
-    new AssetResolver({ eventBus }),
-    5
-  );
+  const resourceTracker = new ResourceTracker({ eventBus });
+  engine.register('resourceTracker', resourceTracker, 2);
 
-  const sceneManager = engine.register('sceneManager', new SceneManager({ eventBus }), 10);
+  const assetResolver = new AssetResolver({
+    eventBus,
+    resourceTracker,
+    config: initialUiSettings.contentBrowser,
+  });
+  engine.register('assetResolver', assetResolver, 5);
 
-  const spatialIndex = engine.register(
-    'spatialIndex',
-    new SpatialIndex({ sceneManager, eventBus }),
-    15
-  );
+  const sceneManager = new SceneManager({
+    eventBus,
+    defaultSceneName: initialUiSettings.sceneSave?.defaultFileName,
+  });
+  engine.register('sceneManager', sceneManager, 10);
 
-  const sceneSerializer = engine.register(
-    'sceneSerializer',
-    new SceneSerializer({ sceneManager, assetResolver, eventBus }),
-    16
-  );
+  const spatialIndex = new SpatialIndex({ sceneManager, eventBus });
+  engine.register('spatialIndex', spatialIndex, 15);
 
-  const pawnManager = engine.register(
-    'pawnManager',
-    new PawnManager({
-      eventBus,
-      inputManager,
-      aspect: engine.width / engine.height,
-    }),
-    20
-  );
+  const batchPool = new BatchPoolManager({
+    scene: sceneManager.scene,
+    eventBus,
+  });
+  sceneManager.batchPool = batchPool;
+  engine.register('batchPool', batchPool, 12);
+
+  const sceneSerializer = new SceneSerializer({
+    sceneManager,
+    assetResolver,
+    eventBus,
+    resourceTracker,
+    batchPool,
+    config: initialUiSettings.sceneSave,
+  });
+  engine.register('sceneSerializer', sceneSerializer, 16);
+
+  const pawnManager = new PawnManager({
+    eventBus,
+    inputManager,
+    aspect: engine.width / engine.height,
+  });
+  engine.register('pawnManager', pawnManager, 20);
 
   const controllerDeps = {
     manager: pawnManager,
@@ -120,42 +140,60 @@ function main() {
   pawnManager.registerController('walk', walkController);
   pawnManager.setMode('surveyor');
 
-  engine.register('lightingRig', new LightingRig({ scene: sceneManager.scene, eventBus }), 30);
+  const lightingRig = new LightingRig({ scene: sceneManager.scene, eventBus });
+  engine.register('lightingRig', lightingRig, 30);
 
-  const viewportGuides = engine.register(
-    'viewportGuides',
-    new ViewportGuides({ scene: sceneManager.scene, eventBus }),
-    35
-  );
+  const viewportGuides = new ViewportGuides({ scene: sceneManager.scene, eventBus });
+  engine.register('viewportGuides', viewportGuides, 35);
 
-  const renderPipeline = engine.register(
-    'renderPipeline',
-    new RenderPipeline({
-      canvas,
-      scene: sceneManager.scene,
-      camera: pawnManager.camera,
-      eventBus,
-      viewportGuides,
-    }),
-    100
-  );
+  const renderPipeline = new RenderPipeline({
+    canvas,
+    scene: sceneManager.scene,
+    camera: pawnManager.camera,
+    eventBus,
+    viewportGuides,
+  });
+  engine.register('renderPipeline', renderPipeline, 100);
 
   renderPipeline.registerStyle('pr', new PRStyle({ pipeline: renderPipeline, eventBus }));
   renderPipeline.setStyle('pr');
 
-  const uiManager = engine.register(
-    'uiManager',
-    new UIManager({
-      root: hudRoot,
-      eventBus,
-      renderPipeline,
-      assetResolver,
-      sceneManager,
-      pawnManager,
-      config: { ui: initialUiSettings },
-    }),
-    110
-  );
+  const uiManager = new UIManager({
+    root: hudRoot,
+    eventBus,
+    renderPipeline,
+    assetResolver,
+    sceneManager,
+    pawnManager,
+    config: { ui: initialUiSettings },
+  });
+  engine.register('uiManager', uiManager, 110);
+
+  const selectionTool = new SelectionTool({
+    sceneManager,
+    camera: pawnManager.camera,
+    eventBus,
+    batchPool,
+    pawnManager,
+    uiManager,
+  });
+  renderPipeline.selectionTool = selectionTool;
+  engine.register('selectionTool', selectionTool, 115);
+
+  const placementTool = new PlacementTool({
+    canvas,
+    sceneManager,
+    sceneSerializer,
+    assetResolver,
+    camera: pawnManager.camera,
+    eventBus,
+    batchPool,
+    selectionTool,
+    pawnManager,
+    uiManager,
+    config: initialUiSettings,
+  });
+  engine.register('placementTool', placementTool, 116);
 
   // Sync viewport dimensions and redraw immediately during panel slide animations
   eventBus.on('ui:viewportLayoutChanged', () => {
@@ -202,6 +240,7 @@ function main() {
         await sceneSerializer.spawnEntityFromAsset(item.logicalPath);
       } else if (item.category === 'scenes') {
         await sceneSerializer.loadScene(item.logicalPath);
+        sceneManager.setSceneNameFromFile(item.fileName ?? item.logicalPath);
       } else if (item.category === 'environments') {
         eventBus.emit('environment:loadRequest', { logicalPath: item.logicalPath });
       }
@@ -219,11 +258,99 @@ function main() {
       if (data.surveyor) surveyorController.configure(data.surveyor);
       if (data.drone) droneController.configure(data.drone);
       if (data.walk) walkController.configure(data.walk);
+    } else if (fileName === 'uiSettings.json') {
+      if (data.contentBrowser) assetResolver.configure(data.contentBrowser);
+      if (data.sceneSave) {
+        sceneSerializer.configure(data.sceneSave);
+        if (data.sceneSave.defaultFileName) {
+          sceneManager.setSceneNameFromFile(data.sceneSave.defaultFileName);
+        }
+      }
+    }
+  });
+
+  const isSceneActionAllowed = () => {
+    if (uiManager.settingsPanel?.visible) return false;
+    const allowedModes =
+      initialUiSettings.sceneActions?.allowedModes ??
+      sceneSerializer.saveConfig?.allowedModes ??
+      ['surveyor'];
+    return allowedModes.includes(pawnManager.activeMode);
+  };
+
+  const triggerSceneNew = () => {
+    if (!isSceneActionAllowed()) return;
+    sceneSerializer.newScene();
+  };
+
+  const triggerSceneSave = async () => {
+    if (!isSceneActionAllowed()) return;
+
+    try {
+      const savedResult = await sceneSerializer.saveScene();
+      const savedName = savedResult?.fileName ?? savedResult?.name;
+      if (savedName) {
+        sceneManager.setSceneNameFromFile(savedName);
+      }
+    } catch (err) {
+      if (err?.name !== 'AbortError') {
+        console.error('Failed to save scene:', err);
+      }
+    }
+  };
+
+  const triggerSceneLoad = async () => {
+    if (!isSceneActionAllowed()) return;
+    try {
+      const loaded = await sceneSerializer.loadSceneFromDisk();
+      const loadedName = loaded?.fileName ?? loaded?.name;
+      if (loadedName) {
+        sceneManager.setSceneNameFromFile(loadedName);
+      }
+    } catch (err) {
+      if (err?.name !== 'AbortError') {
+        console.error('Failed to load scene:', err);
+      }
+    }
+  };
+
+  eventBus.on('scene:requestLoadFromDisk', triggerSceneLoad);
+
+  eventBus.on('input:action:down', ({ action } = {}) => {
+    if (uiManager.settingsPanel?.visible) return;
+
+    if (action === 'scene.new') {
+      triggerSceneNew();
+      return;
+    }
+
+    if (action === 'scene.load') {
+      triggerSceneLoad();
+      return;
+    }
+
+    if (action === 'scene.save') {
+      triggerSceneSave();
+      return;
+    }
+
+    if (action in CAMERA_MODE_ACTIONS) {
+      pawnManager.setMode(CAMERA_MODE_ACTIONS[action]);
+      return;
+    }
+
+    if (action in VIEW_MODE_ACTIONS) {
+      eventBus.emit('view:setMode', { mode: VIEW_MODE_ACTIONS[action], action });
     }
   });
 
   eventBus.on('input:action:down', ({ action } = {}) => {
     if (uiManager.settingsPanel?.visible) return;
+
+    if (action === 'scene.save') {
+      triggerSceneSave();
+      return;
+    }
 
     if (action in CAMERA_MODE_ACTIONS) {
       pawnManager.setMode(CAMERA_MODE_ACTIONS[action]);

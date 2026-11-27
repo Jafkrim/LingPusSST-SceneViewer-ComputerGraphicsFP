@@ -76,6 +76,10 @@ function mergeUiConfig(base, override) {
       ...base.viewportGuides,
       ...(safe.viewportGuides && typeof safe.viewportGuides === 'object' ? safe.viewportGuides : {}),
     },
+    sceneSave: {
+      ...(base.sceneSave ?? {}),
+      ...(safe.sceneSave && typeof safe.sceneSave === 'object' ? safe.sceneSave : {}),
+    },
     contentBrowser: {
       ...base.contentBrowser,
       ...(safe.contentBrowser && typeof safe.contentBrowser === 'object' ? safe.contentBrowser : {}),
@@ -110,7 +114,6 @@ export class UIManager {
     this.pawnManager = pawnManager;
 
     this.uiConfig = mergeUiConfig(structuredClone(defaultUiSettings), config.ui ?? {});
-    // Always initialize workspace panels and Render tab to defaultUiSettings on refresh
     this.uiConfig.panels = { ...defaultUiSettings.panels };
     this.uiConfig.editorPanel = {
       ...this.uiConfig.editorPanel,
@@ -205,6 +208,14 @@ export class UIManager {
     );
     this._applyHudVisibility();
 
+    this.settingsPanel?.setVisible?.(Boolean(this.uiConfig.panels.settingsVisible));
+    this.statsPanel?.setVisible?.(Boolean(this.uiConfig.panels.statsVisible));
+    this.contentBrowserPanel?.setVisible?.(Boolean(this.uiConfig.panels.contentBrowserVisible));
+    this.editorPanel?.setVisible?.(Boolean(this.uiConfig.panels.editorVisible));
+    this.editorPanel?.setActiveTab?.(this.uiConfig.editorPanel.activeTab);
+    this.editorPanel?.applyConfig?.(this.uiConfig.editorPanel);
+    this.viewportGizmoPanel?.setVisible?.(Boolean(this.uiConfig.panels.viewportGizmoVisible));
+
     this._unsubs = [
       this.eventBus.on('config:loaded', ({ fileName, data } = {}) => {
         if (fileName === 'uiSettings.json' && data) {
@@ -221,17 +232,23 @@ export class UIManager {
           return;
         }
 
-        if (action.startsWith('ui.pie.')) {
-          if (!this.hudHidden) {
-            const menuId = action.slice('ui.pie.'.length);
-            this.pieMenuPanel.open(menuId);
-          }
+        if (action === this.actions.toggleHud) {
+          this.toggleHud();
           return;
         }
 
-        if (action === this.actions.toggleHud) {
-          this.toggleHud();
-        } else if (action === this.actions.toggleSettings) {
+        // Block Pie Menus and Content Browser while HUD is hidden (H pressed)
+        if (this.hudHidden) {
+          return;
+        }
+
+        if (action.startsWith('ui.pie.')) {
+          const menuId = action.slice('ui.pie.'.length);
+          this.pieMenuPanel.open(menuId);
+          return;
+        }
+
+        if (action === this.actions.toggleSettings) {
           this._toggleRegisteredPanel('settings');
         } else if (action === this.actions.toggleContentBrowser) {
           this._toggleRegisteredPanel('contentBrowser');
@@ -245,11 +262,16 @@ export class UIManager {
       }),
       this.eventBus.on('input:action:up', ({ action } = {}) => {
         if (action && action.startsWith('ui.pie.')) {
+          if (this.hudHidden) {
+            this.pieMenuPanel?.cancel?.();
+            return;
+          }
           const menuId = action.slice('ui.pie.'.length);
           this.pieMenuPanel.confirm(null, menuId);
         }
       }),
       this.eventBus.on('ui:togglePanel', ({ panel } = {}) => {
+        if (this.hudHidden) return;
         if (this.settingsPanel.visible && panel !== 'settings') return;
         if (panel) this._toggleRegisteredPanel(panel);
       }),
@@ -345,7 +367,6 @@ export class UIManager {
 
     document.documentElement.style.setProperty('--ed-width', `${baseEdWidth}px`);
 
-    // Match .hud-editor-panel width expression exactly so Content Browser never has a seam
     if (editorFactor >= 1) {
       document.documentElement.style.setProperty(
         '--ed-dock-offset',
@@ -491,7 +512,6 @@ export class UIManager {
 
   _applyUiConfig(incoming) {
     const merged = mergeUiConfig(this.uiConfig, incoming);
-    // Always restore default workspace panels & Render tab on page refresh
     merged.panels = { ...defaultUiSettings.panels };
     merged.editorPanel = {
       ...merged.editorPanel,
@@ -516,21 +536,12 @@ export class UIManager {
     this.editorPanel?.applyConfig?.(merged.editorPanel);
     this.editorPanel?.renderPanel?.applyConfig?.(merged);
     this.viewportGizmoPanel?.setVisible?.(Boolean(merged.panels.viewportGizmoVisible));
-    this._applyUiScale(this.uiConfig.uiScale.value / 100);
-    this._applyAnimationsConfig(this.uiConfig.animations);
+    this._applyUiScale(merged.uiScale.value / 100);
     this._syncDockOffsets(
-      this.uiConfig.panels.editorVisible ? 1 : 0,
-      this.uiConfig.panels.contentBrowserVisible ? 1 : 0
+      merged.panels.editorVisible ? 1 : 0,
+      merged.panels.contentBrowserVisible ? 1 : 0
     );
     this._applyHudVisibility();
-
-    this.settingsPanel?.setVisible?.(Boolean(this.uiConfig.panels.settingsVisible));
-    this.statsPanel?.setVisible?.(Boolean(this.uiConfig.panels.statsVisible));
-    this.contentBrowserPanel?.setVisible?.(Boolean(this.uiConfig.panels.contentBrowserVisible));
-    this.editorPanel?.setVisible?.(Boolean(this.uiConfig.panels.editorVisible));
-    this.editorPanel?.setActiveTab?.(this.uiConfig.editorPanel.activeTab);
-    this.editorPanel?.applyConfig?.(this.uiConfig.editorPanel);
-    this.viewportGizmoPanel?.setVisible?.(Boolean(this.uiConfig.panels.viewportGizmoVisible));
   }
 
   _emitSave() {
@@ -549,6 +560,7 @@ export class UIManager {
         viewportGizmo: { ...this.uiConfig.viewportGizmo },
         pieMenu: structuredClone(this.uiConfig.pieMenu),
         viewportGuides: { ...this.uiConfig.viewportGuides },
+        sceneSave: { ...this.uiConfig.sceneSave },
         contentBrowser: {
           ...this.uiConfig.contentBrowser,
           scopes: [...(this.uiConfig.contentBrowser?.scopes ?? [])],
@@ -564,6 +576,12 @@ export class UIManager {
   }
 
   _applyHudVisibility() {
+    if (this.hudHidden) {
+      this.pieMenuPanel?.cancel?.();
+      if (this.contentBrowserPanel?.visible) {
+        this._setRegisteredPanelVisible('contentBrowser', false, true);
+      }
+    }
     this.container.style.display = this.hudHidden ? 'none' : '';
     document.body.classList.toggle('is-hud-hidden', this.hudHidden);
     this.eventBus.emit('ui:hudVisibilityChanged', { hidden: this.hudHidden });

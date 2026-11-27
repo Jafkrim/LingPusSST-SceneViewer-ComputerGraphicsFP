@@ -1,41 +1,113 @@
 {
-  "camera.mode.surveyor": ["Digit1"],
-  "camera.mode.drone": ["Digit2"],
-  "camera.mode.walk": ["Digit3"],
-
-  "view.mode.1": ["Digit4"],
-  "view.mode.2": ["Digit5"],
-  "view.mode.3": ["Digit6"],
-  "view.mode.4": ["Digit7"],
-  "view.mode.5": ["Digit8"],
-  "view.mode.6": ["Digit9"],
-
-  "camera.fly.engage": ["Mouse2"],
-  "camera.orbit.modifier": ["AltLeft", "AltRight"],
-  "camera.orbit.rotate": ["AltLeft+Mouse0", "AltRight+Mouse0"],
-  "camera.orbit.pan": ["AltLeft+Mouse2", "AltRight+Mouse2"],
-  "camera.focus": ["KeyF"],
-  "camera.look": ["Mouse2"],
-  "camera.moveForward": ["KeyW"],
-  "camera.moveBackward": ["KeyS"],
-  "camera.moveLeft": ["KeyA"],
-  "camera.moveRight": ["KeyD"],
-  "camera.moveUp": ["KeyE"],
-  "camera.moveDown": ["KeyQ"],
-  "camera.zoomIn": ["KeyC"],
-  "camera.zoomOut": ["KeyZ"],
-  "camera.jump": ["Space"],
-  "camera.sprint": ["ShiftLeft", "ShiftRight"],
-  "camera.slow": ["AltLeft", "AltRight"],
-
-  "tool.select": ["Mouse0"],
-  "tool.measure": ["KeyM"],
-  "tool.sectionCut": ["KeyX"],
-  "tool.cancel": ["Escape"],
-
-  "ui.pie.panels": ["Tab"],
-  "ui.pie.camera": ["Backquote"],
-
-  "ui.toggleHud": ["KeyH"],
-  "ui.toggleContentBrowser": ["ShiftLeft+Space", "ShiftRight+Space"]
+  "camera.mode.surveyor": [
+    "Digit1"
+  ],
+  "camera.mode.drone": [
+    "Digit2"
+  ],
+  "camera.mode.walk": [
+    "Digit3"
+  ],
+  "view.mode.1": [
+    "Digit4"
+  ],
+  "view.mode.2": [
+    "Digit5"
+  ],
+  "view.mode.3": [
+    "Digit6"
+  ],
+  "view.mode.4": [
+    "Digit7"
+  ],
+  "view.mode.5": [
+    "Digit8"
+  ],
+  "view.mode.6": [
+    "Digit9"
+  ],
+  "camera.fly.engage": [
+    "Mouse2"
+  ],
+  "camera.orbit.modifier": [
+    "AltLeft"
+  ],
+  "camera.orbit.rotate": [
+    "AltLeft+Mouse0"
+  ],
+  "camera.orbit.pan": [
+    "AltLeft+Mouse2"
+  ],
+  "camera.focus": [
+    "KeyF"
+  ],
+  "camera.look": [
+    "Mouse2"
+  ],
+  "camera.moveForward": [
+    "KeyW"
+  ],
+  "camera.moveBackward": [
+    "KeyS"
+  ],
+  "camera.moveLeft": [
+    "KeyA"
+  ],
+  "camera.moveRight": [
+    "KeyD"
+  ],
+  "camera.moveUp": [
+    "KeyE"
+  ],
+  "camera.moveDown": [
+    "KeyQ"
+  ],
+  "camera.zoomIn": [
+    "KeyC"
+  ],
+  "camera.zoomOut": [
+    "KeyZ"
+  ],
+  "camera.jump": [
+    "Space"
+  ],
+  "camera.sprint": [
+    "ShiftLeft"
+  ],
+  "camera.slow": [
+    "AltLeft"
+  ],
+  "tool.select": [
+    "Mouse0"
+  ],
+  "tool.measure": [
+    "KeyM"
+  ],
+  "tool.sectionCut": [
+    "KeyX"
+  ],
+  "tool.cancel": [
+    "Escape"
+  ],
+  "scene.new": [
+    "AltLeft+KeyN"
+  ],
+  "scene.load": [
+    "AltLeft+KeyO"
+  ],
+  "scene.save": [
+    "AltLeft+KeyS"
+  ],
+  "ui.pie.panels": [
+    "Tab"
+  ],
+  "ui.pie.camera": [
+    "Backquote"
+  ],
+  "ui.toggleHud": [
+    "KeyH"
+  ],
+  "ui.toggleContentBrowser": [
+    "ControlLeft+Space"
+  ]
 }

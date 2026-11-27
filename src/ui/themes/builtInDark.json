@@ -36,6 +36,8 @@
     "cb-cat-glb": "#3b82f6",
     "cb-cat-gltf": "#06b6d4",
     "cb-cat-binary": "#64748b",
-    "cb-cat-texture": "#ef4444"
+    "cb-cat-texture": "#ef4444",
+    "--selection-outline": "#ff8000",
+    "--selection-outline-width": "3.0"
   }
 }

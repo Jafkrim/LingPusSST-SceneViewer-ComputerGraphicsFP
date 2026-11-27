@@ -197,7 +197,7 @@ src/rendering/
 ├── lighting/                          # Direct/indirect lighting, reflections, sky/IBL, and solar/lunar cycle
 │   ├── globalIlluminationSystem.js    # Interval-updated real-time probes and screen-space indirect bounce.
 │   ├── lightingRig.js                 # Sun/moon directional lights, ambient fill, and penumbra-capable shadow maps.
-│   ├── reflectionProbeSystem.js       # Real-time/probe cubemaps blended with screen-space reflections (SSR) and planar/puddle surfaces.
+│   ├── reflectionSystem.js            # Real-time/probe cubemaps blended with screen-space reflections (SSR) and planar/puddle surfaces.
 │   ├── skyboxSystem.js                # Loads HDR/EXR maps, generates IBL PMREM, and renders procedural aurora sky domes.
 │   └── timeOfDaySystem.js             # Computes sun/moon angles from lat/lon, date/time (Y-M-D H:M:S), and timezone offset.
 ├── passes/                            # Modular render, AO, debug buffer, and post-processing passes
@@ -366,7 +366,7 @@ All camera controllers, viewport tools, and UI panels query **logical action IDs
 | `src/pawn/pawnManager.js` | `5025241040` | Done |
 | `src/rendering/lighting/globalIlluminationSystem.js` | `TBD` | Pending |
 | `src/rendering/lighting/lightingRig.js` | `5025241040` | WIP |
-| `src/rendering/lighting/reflectionProbeSystem.js` | `TBD` | Pending |
+| `src/rendering/lighting/reflectionSystem.js` | `TBD` | Pending |
 | `src/rendering/lighting/skyboxSystem.js` | `TBD` | Pending |
 | `src/rendering/lighting/timeOfDaySystem.js` | `TBD` | Pending |
 | `src/rendering/passes/aoPass.js` | `TBD` | Pending |

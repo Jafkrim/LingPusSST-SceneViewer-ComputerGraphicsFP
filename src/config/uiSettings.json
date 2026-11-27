@@ -25,18 +25,150 @@
   },
   "settingsPanel": {
     "title": "Settings",
+    "closeLabel": "×",
+    "closeTitle": "Close Settings",
     "widthPx": 560,
     "minHeightPx": 360,
     "maxHeightVh": 85,
-    "closeLabel": "×",
-    "closeTitle": "Close Settings (Esc)"
+    "collapsedSections": {
+      "Content Browser": true,
+      "Appearance": true,
+      "Keybinds": true
+    },
+    "sections": {
+      "appearance": {
+        "title": "Appearance",
+        "themeLabel": "Theme",
+        "scaleLabel": "UI Scale"
+      },
+      "contentBrowser": {
+        "title": "Content Browser",
+        "formatOptions": [
+          {
+            "key": "exr",
+            "label": "Preview EXR (.exr)"
+          },
+          {
+            "key": "glb",
+            "label": "Preview GLB (.glb)"
+          },
+          {
+            "key": "gltf",
+            "label": "Preview GLTF (.gltf)"
+          },
+          {
+            "key": "hdr",
+            "label": "Preview HDR (.hdr)"
+          },
+          {
+            "key": "prefab",
+            "label": "Preview Prefabs (.prefab.json)"
+          },
+          {
+            "key": "texture",
+            "label": "Preview Textures (.png, .jpg, .webp, .tga)"
+          }
+        ]
+      },
+      "keybinds": {
+        "title": "Keybinds",
+        "resetLabel": "Reset Defaults",
+        "unboundLabel": "Unbound",
+        "capturingLabel": "Press key..."
+      }
+    }
+  },
+  "renderPanel": {
+    "collapsedSections": {
+      "Viewport Guides": true
+    }
   },
   "editorPanel": {
     "widthPx": 300,
-    "hierarchyHeightPx": 220,
+    "hierarchyHeightPx": 221,
     "hierarchyMinHeightPx": 90,
     "hierarchyMaxHeightPx": 560,
     "activeTab": "render"
+  },
+  "inspectorPanel": {
+    "emptyText": "Select an object to inspect",
+    "transformSectionTitle": "Transform",
+    "fallbackCssVar": "--accent-primary",
+    "rows": [
+      {
+        "key": "position",
+        "label": "Location",
+        "unit": "m",
+        "step": 0.01,
+        "precision": 4,
+        "defaultValue": [
+          0,
+          0,
+          0
+        ],
+        "resetTitle": "Reset Location"
+      },
+      {
+        "key": "rotation",
+        "label": "Rotation",
+        "unit": "°",
+        "step": 0.5,
+        "precision": 4,
+        "defaultValue": [
+          0,
+          0,
+          0
+        ],
+        "resetTitle": "Reset Rotation"
+      },
+      {
+        "key": "scale",
+        "label": "Scale",
+        "unit": "",
+        "step": 0.01,
+        "precision": 4,
+        "defaultValue": [
+          1,
+          1,
+          1
+        ],
+        "resetTitle": "Reset Scale",
+        "uniformToggle": {
+          "enabledDefault": true,
+          "label": "Uniform",
+          "title": "Toggle Uniform Scale"
+        }
+      }
+    ],
+    "axes": [
+      {
+        "index": 0,
+        "label": "X",
+        "cssVar": "--axis-x"
+      },
+      {
+        "index": 1,
+        "label": "Y",
+        "cssVar": "--axis-y"
+      },
+      {
+        "index": 2,
+        "label": "Z",
+        "cssVar": "--axis-z"
+      }
+    ]
+  },
+  "placementTool": {
+    "allowedCategories": [
+      "models",
+      "prefabs"
+    ],
+    "defaultDropDistance": 12,
+    "maxGroundDistance": 250,
+    "snapToSurface": true,
+    "snapToNearestVertex": true,
+    "vertexSnapRadius": 0.45,
+    "alignToSurfaceNormal": false
   },
   "viewportGizmo": {
     "sizePx": 84,
@@ -117,7 +249,21 @@
     "axisY": true,
     "axisZ": true
   },
+  "sceneSave": {
+    "defaultDirectory": "",
+    "defaultName": "untitled",
+    "extension": ".scene.json",
+    "allowedModes": [
+      "surveyor"
+    ]
+  },
+  "sceneActions": {
+    "allowedModes": [
+      "surveyor"
+    ]
+  },
   "contentBrowser": {
+    "rootLabel": "public",
     "scopes": [
       "engineContent",
       "userContent"
@@ -128,6 +274,28 @@
       "prefabs",
       "scenes"
     ],
+    "folderRules": {
+      "environments": [
+        ".exr",
+        ".hdr"
+      ],
+      "models": [
+        ".glb",
+        ".gltf",
+        ".bin",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".tga"
+      ],
+      "prefabs": [
+        ".prefab.json"
+      ],
+      "scenes": [
+        ".scene.json"
+      ]
+    },
     "categories": [
       {
         "id": "folder",
@@ -206,6 +374,16 @@
       "binary",
       "texture"
     ],
+    "previewImages": true,
+    "previewResolution": 160,
+    "previewFormats": {
+      "exr": true,
+      "glb": true,
+      "gltf": true,
+      "hdr": true,
+      "prefab": true,
+      "texture": true
+    },
     "hierarchyVisible": true,
     "filtersVisible": false,
     "searchMinChars": 1,

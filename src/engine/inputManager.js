@@ -14,6 +14,7 @@ export class InputManager {
 
     this._actionBindings = new Map();
     this._activeActions = new Set();
+    this._boundKeyCodes = new Set();
 
     this.delta = {
       moveX: 0,
@@ -64,6 +65,7 @@ export class InputManager {
   setKeybinds(keybinds = {}) {
     this._actionBindings.clear();
     this._activeActions.clear();
+    this._boundKeyCodes.clear();
 
     for (const [action, raw] of Object.entries(keybinds)) {
       const entries = Array.isArray(raw) ? raw : raw ? [raw] : [];
@@ -76,8 +78,18 @@ export class InputManager {
         )
         .filter((parts) => parts.length > 0);
 
+      for (const combo of parsed) {
+        for (const code of combo) {
+          if (!code.startsWith('Mouse')) {
+            this._boundKeyCodes.add(code);
+          }
+        }
+      }
+
       this._actionBindings.set(action, parsed);
     }
+
+    this.syncKeyboardLock();
   }
 
   getKeybinds() {
@@ -88,13 +100,53 @@ export class InputManager {
     return snapshot;
   }
 
+  async syncKeyboardLock() {
+    if (typeof navigator === 'undefined' || !navigator.keyboard) return;
+
+    if (!document.fullscreenElement) {
+      try {
+        navigator.keyboard.unlock?.();
+      } catch {}
+      return;
+    }
+
+    if (typeof navigator.keyboard.lock === 'function') {
+      try {
+        // Keep Escape unlocked so the user can always exit fullscreen normally
+        const lockable = [...this._boundKeyCodes].filter((code) => code !== 'Escape');
+        if (lockable.length > 0) {
+          await navigator.keyboard.lock(lockable);
+        }
+      } catch {}
+    }
+  }
+
   isCodeDown(code) {
     return this.keysDown.has(code) || this.buttonsDown.has(code);
   }
 
   areAllCodesDown(codes) {
     for (const code of codes) {
-      if (!this.isCodeDown(code)) return false;
+      if (this.isCodeDown(code)) continue;
+      if (
+        (code === 'ControlLeft' || code === 'ControlRight') &&
+        (this.keysDown.has('ControlLeft') || this.keysDown.has('ControlRight'))
+      ) {
+        continue;
+      }
+      if (
+        (code === 'ShiftLeft' || code === 'ShiftRight') &&
+        (this.keysDown.has('ShiftLeft') || this.keysDown.has('ShiftRight'))
+      ) {
+        continue;
+      }
+      if (
+        (code === 'AltLeft' || code === 'AltRight') &&
+        (this.keysDown.has('AltLeft') || this.keysDown.has('AltRight'))
+      ) {
+        continue;
+      }
+      return false;
     }
     return codes.length > 0;
   }
@@ -148,6 +200,14 @@ export class InputManager {
     }
   }
 
+  _isTextEntryElement(el) {
+    const node = el instanceof Element ? el : document.activeElement;
+    if (!node) return false;
+    return Boolean(
+      node.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]')
+    );
+  }
+
   _isInteractiveUI(el) {
     if (!el || el === this.target || el === document.body || el === document.documentElement) {
       return false;
@@ -157,8 +217,51 @@ export class InputManager {
     );
   }
 
+  _shouldInterceptKeyEvent(e) {
+    if (this._isTextEntryElement(e.target)) {
+      return false;
+    }
+
+    // Preserve browser reload & DevTools shortcuts
+    if (
+      e.code === 'F5' ||
+      e.code === 'F12' ||
+      ((e.ctrlKey || e.metaKey) && e.code === 'KeyR') ||
+      ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyI')
+    ) {
+      return false;
+    }
+
+    // Block native zoom shortcuts everywhere outside text inputs
+    if ((e.ctrlKey || e.metaKey) && ['+', '-', '=', '0'].includes(e.key)) {
+      return true;
+    }
+
+    // Intercept any key or modifier participating in default or user-custom keybinds
+    if (this._boundKeyCodes.has(e.code)) {
+      return true;
+    }
+
+    // Intercept any Ctrl/Alt/Meta chord over the app so browser shortcuts do not steal focus
+    if (e.ctrlKey || e.altKey || e.metaKey) {
+      return true;
+    }
+
+    return false;
+  }
+
   _syncModifiersFromEvent(e) {
     if (!e) return;
+
+    if (e.ctrlKey) {
+      if (!this.keysDown.has('ControlLeft') && !this.keysDown.has('ControlRight')) {
+        this.keysDown.add('ControlLeft');
+      }
+    } else {
+      this.keysDown.delete('ControlLeft');
+      this.keysDown.delete('ControlRight');
+    }
+
     if (e.altKey) {
       if (!this.keysDown.has('AltLeft') && !this.keysDown.has('AltRight')) {
         this.keysDown.add('AltLeft');
@@ -185,7 +288,14 @@ export class InputManager {
       if (keybinds) this.setKeybinds(keybinds);
     });
 
+    document.addEventListener('fullscreenchange', () => {
+      this.syncKeyboardLock();
+    }, { signal });
+
     document.addEventListener('pointerlockchange', () => {
+      if (this.isPointerLocked) {
+        this.syncKeyboardLock();
+      }
       this.eventBus?.emit('input:pointerlockchange', {
         locked: this.isPointerLocked,
       });
@@ -205,15 +315,13 @@ export class InputManager {
     }, { capture: true, signal });
 
     window.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && ['+', '-', '=', '0'].includes(e.key)) {
+      if (this._shouldInterceptKeyEvent(e)) {
         e.preventDefault();
       }
 
-      if (this._isInteractiveUI(e.target)) return;
+      if (this._isTextEntryElement(e.target)) return;
 
-      if (e.code === 'AltLeft' || e.code === 'AltRight') {
-        e.preventDefault();
-      }
+      this._syncModifiersFromEvent(e);
 
       const code = e.code;
       const isRepeat = this.keysDown.has(code);
@@ -229,16 +337,22 @@ export class InputManager {
         });
         this._evaluateActions(code, e);
       }
-    }, { signal });
+    }, { capture: true, passive: false, signal });
 
     window.addEventListener('keyup', (e) => {
+      if (this._shouldInterceptKeyEvent(e)) {
+        e.preventDefault();
+      }
+
       const code = e.code;
       const wasDown = this.keysDown.delete(code);
+      this._syncModifiersFromEvent(e);
+
       this.eventBus?.emit('input:keyup', { code, key: e.key });
       if (wasDown) {
         this._evaluateActions(code, e);
       }
-    }, { signal });
+    }, { capture: true, passive: false, signal });
 
     window.addEventListener('blur', () => {
       this.keysDown.clear();
@@ -393,11 +507,15 @@ export class InputManager {
   dispose() {
     this.exitPointerLock();
     this.setCursorHidden(false);
+    try {
+      navigator?.keyboard?.unlock?.();
+    } catch {}
     this._abortController.abort();
     this.keysDown.clear();
     this.buttonsDown.clear();
     this._activeTouches.clear();
     this._actionBindings.clear();
     this._activeActions.clear();
+    this._boundKeyCodes.clear();
   }
 }

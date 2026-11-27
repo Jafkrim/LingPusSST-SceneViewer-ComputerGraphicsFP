@@ -10,7 +10,7 @@ export class LightingRig {
     this.eventBus = eventBus;
 
     this.group = new THREE.Group();
-    this.group.name = 'LightingRig';
+    this.group.name = 'Lighting';
 
     this.hemiLight = new THREE.HemisphereLight(
       config.skyColor ?? 0xdbeafe,

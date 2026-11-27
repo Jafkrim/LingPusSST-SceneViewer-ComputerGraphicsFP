@@ -1,18 +1,28 @@
 import * as THREE from 'three';
 
+function stripSceneExtension(fileName) {
+  const base = String(fileName ?? '')
+    .split(/[\\/]/)
+    .pop()
+    .trim();
+  if (!base) return '';
+  return base.replace(/\.scene\.json$/i, '').replace(/\.json$/i, '');
+}
+
 export class SceneManager {
-  constructor({ eventBus, resourceTracker = null }) {
+  constructor({ eventBus, resourceTracker = null, defaultSceneName = 'Untitled' }) {
     if (!eventBus) throw new Error('SceneManager requires an EventBus instance.');
 
     this.eventBus = eventBus;
     this.resourceTracker = resourceTracker;
+    this.defaultSceneName = defaultSceneName;
 
     this.scene = new THREE.Scene();
-    this.scene.name = 'RootScene';
+    this.scene.name = defaultSceneName;
 
     // Dedicated container for user/scene-serialized entities (excludes guides & lighting rig)
     this.worldGroup = new THREE.Group();
-    this.worldGroup.name = 'WorldEntities';
+    this.worldGroup.name = 'World';
     this.scene.add(this.worldGroup);
 
     this.entities = new Map();
@@ -21,6 +31,15 @@ export class SceneManager {
 
     this._bindEvents();
     this.syncViewportBackdrop();
+  }
+
+  setSceneNameFromFile(fileName) {
+    const nextName = stripSceneExtension(fileName) || this.defaultSceneName;
+    if (this.scene.name !== nextName) {
+      this.scene.name = nextName;
+      this.eventBus.emit('scene:hierarchyChanged', { sceneName: nextName });
+    }
+    return nextName;
   }
 
   _bindEvents() {
@@ -32,6 +51,16 @@ export class SceneManager {
       if (action === 'tool.cancel' && this.selectedId !== null) {
         this.clearSelection();
       }
+    });
+
+    this.eventBus.on('scene:loaded', ({ fileName, logicalPath } = {}) => {
+      const target = fileName ?? logicalPath;
+      if (target) this.setSceneNameFromFile(target);
+    });
+
+    this.eventBus.on('scene:saved', ({ fileName, logicalPath } = {}) => {
+      const target = fileName ?? logicalPath;
+      if (target) this.setSceneNameFromFile(target);
     });
   }
 
@@ -77,6 +106,10 @@ export class SceneManager {
 
     if (this.selectedId === id) {
       this.clearSelection();
+    }
+
+    if (entry.object?.userData?.isBatchedProxy) {
+      this.batchPool?.removeProxy?.(id);
     }
 
     this.worldGroup.remove(entry.object);

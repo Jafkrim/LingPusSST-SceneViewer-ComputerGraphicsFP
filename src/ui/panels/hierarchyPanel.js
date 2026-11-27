@@ -7,12 +7,18 @@ const EXCLUDED_HIERARCHY_NAMES = new Set([
   'WorldAxisZ',
 ]);
 
+const DISPLAY_NAME_OVERRIDES = Object.freeze({
+  LightingRig: 'Lighting',
+  WorldEntities: 'World',
+});
+
 export class HierarchyPanel {
   constructor({ eventBus, sceneManager = null }) {
     this.eventBus = eventBus;
     this.sceneManager = sceneManager;
 
     this._expandedIds = new Set();
+    this._autoExpandedRoots = new Set();
     this._selectedId = null;
 
     this.el = document.createElement('div');
@@ -24,11 +30,7 @@ export class HierarchyPanel {
     const titleEl = document.createElement('span');
     titleEl.textContent = 'Hierarchy';
 
-    this._countEl = document.createElement('span');
-    this._countEl.className = 'hud-ed__count';
-    this._countEl.textContent = '0 items';
-
-    this._headerEl.append(titleEl, this._countEl);
+    this._headerEl.append(titleEl);
 
     this._treeEl = document.createElement('nav');
     this._treeEl.className = 'hud-ed__tree';
@@ -37,8 +39,20 @@ export class HierarchyPanel {
 
     this._unsubs = [
       this.eventBus?.on?.('scene:hierarchyChanged', () => this.render()),
+      this.eventBus?.on?.('scene:changed', () => this.render()),
+      this.eventBus?.on?.('scene:entityAdded', () => {
+        if (this.sceneManager?.worldGroup) {
+          this._expandedIds.add(this.sceneManager.worldGroup.uuid);
+        }
+        this.render();
+      }),
+      this.eventBus?.on?.('scene:entityRemoved', () => this.render()),
       this.eventBus?.on?.('scene:objectAdded', () => this.render()),
       this.eventBus?.on?.('scene:objectRemoved', () => this.render()),
+      this.eventBus?.on?.('scene:selectionChanged', ({ object } = {}) => {
+        this._selectedId = object?.uuid ?? null;
+        this.render();
+      }),
       this.eventBus?.on?.('selection:changed', ({ object } = {}) => {
         this._selectedId = object?.uuid ?? null;
         this.render();
@@ -48,6 +62,9 @@ export class HierarchyPanel {
 
   _collectVisibleChildren(parent) {
     const out = [];
+    const isEntityContainer =
+      parent === this.sceneManager?.worldGroup || parent.name === 'WorldEntities';
+
     for (const child of parent.children ?? []) {
       if (
         child.userData?.isViewportGuide ||
@@ -57,25 +74,45 @@ export class HierarchyPanel {
         continue;
       }
 
-      // Unwrap WorldEntities container so spawned scene entities appear directly under RootScene
-      if (child.name === 'WorldEntities') {
-        out.push(...this._collectVisibleChildren(child));
-        continue;
-      }
+      const rawName = child.name || child.type || 'Object3D';
+      const label = DISPLAY_NAME_OVERRIDES[rawName] ?? rawName;
+
+      // Stop recursion at spawned entity roots (.glb / .gltf / .prefab.json) so internal
+      // author nodes (Sketchfab_model, GLTF_SceneRootNode, Blender rigs, etc.) stay hidden.
+      const children =
+        isEntityContainer || child.userData?.hideChildrenInHierarchy
+          ? []
+          : this._collectVisibleChildren(child);
 
       out.push({
         id: child.uuid,
-        label: child.name || child.type || 'Object3D',
+        label,
         object: child,
-        children: this._collectVisibleChildren(child),
+        children,
       });
     }
+
+    out.sort((a, b) =>
+      a.label.localeCompare(b.label, undefined, {
+        sensitivity: 'base',
+        numeric: true,
+      })
+    );
+
     return out;
   }
 
   _getRootNodes() {
     const scene = this.sceneManager?.scene ?? null;
     if (!scene) return [];
+
+    if (!this._autoExpandedRoots.has(scene.uuid)) {
+      this._autoExpandedRoots.add(scene.uuid);
+      this._expandedIds.add(scene.uuid);
+      if (this.sceneManager?.worldGroup) {
+        this._expandedIds.add(this.sceneManager.worldGroup.uuid);
+      }
+    }
 
     return [
       {
@@ -87,18 +124,8 @@ export class HierarchyPanel {
     ];
   }
 
-  _countNodes(nodes) {
-    let total = 0;
-    for (const node of nodes) {
-      total += 1 + this._countNodes(node.children);
-    }
-    return total;
-  }
-
   render() {
     const roots = this._getRootNodes();
-    const totalCount = this._countNodes(roots);
-    this._countEl.textContent = `${totalCount} items`;
     this._treeEl.innerHTML = '';
 
     if (roots.length === 0) {
