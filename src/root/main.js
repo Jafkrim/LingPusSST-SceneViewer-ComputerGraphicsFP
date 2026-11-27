@@ -41,6 +41,19 @@ function main() {
   const eventBus = new EventBus();
   const engine = new Engine({ canvas, eventBus });
 
+  try {
+    const savedRaw = localStorage.getItem('lingpus_sst_ui_settings_v1');
+    if (savedRaw) {
+      const saved = JSON.parse(savedRaw);
+      delete saved.panels;
+      delete saved.hudHidden;
+      if (saved.editorPanel) delete saved.editorPanel.activeTab;
+      localStorage.setItem('lingpus_sst_ui_settings_v1', JSON.stringify(saved));
+    }
+  } catch {
+    // Ignore storage errors
+  }
+
   const initialKeybinds = engine.getConfig('keybinds.json');
   const initialCameraSettings = engine.getConfig('cameraSettings.json');
   const initialUiSettings = engine.getConfig('uiSettings.json');

@@ -124,11 +124,25 @@ export class Engine {
     this._hydrateConfigsFromDisk();
   }
 
+  _sanitizeUiSessionState(data) {
+    if (!data || typeof data !== 'object') return data;
+    const clean = structuredClone(data);
+    clean.panels = structuredClone(defaultUiSettings.panels);
+    clean.hudHidden = Boolean(defaultUiSettings.hudHidden);
+    if (clean.editorPanel && typeof clean.editorPanel === 'object') {
+      clean.editorPanel.activeTab = defaultUiSettings.editorPanel.activeTab;
+    }
+    return clean;
+  }
+
   _readStorageSync(fileName, fallback) {
-    if (import.meta.env.DEV) return fallback;
+    if (import.meta.env.DEV) {
+      return fileName === 'uiSettings.json' ? this._sanitizeUiSessionState(fallback) : fallback;
+    }
     try {
       const raw = window.localStorage.getItem(`${STORAGE_PREFIX}${fileName}`);
-      return raw ? deepMerge(fallback, JSON.parse(raw)) : fallback;
+      const merged = raw ? deepMerge(fallback, JSON.parse(raw)) : fallback;
+      return fileName === 'uiSettings.json' ? this._sanitizeUiSessionState(merged) : merged;
     } catch {
       return fallback;
     }
@@ -143,7 +157,8 @@ export class Engine {
       try {
         const res = await fetch(`/__config/${encodeURIComponent(fileName)}`, { cache: 'no-store' });
         if (res.ok) {
-          const merged = deepMerge(fallback, await res.json());
+          let merged = deepMerge(fallback, await res.json());
+          if (fileName === 'uiSettings.json') merged = this._sanitizeUiSessionState(merged);
           this._configs[fileName] = merged;
           return merged;
         }
@@ -154,7 +169,8 @@ export class Engine {
       try {
         const fh = await this._dirHandle.getFileHandle(fileName);
         const file = await fh.getFile();
-        const merged = deepMerge(fallback, JSON.parse(await file.text()));
+        let merged = deepMerge(fallback, JSON.parse(await file.text()));
+        if (fileName === 'uiSettings.json') merged = this._sanitizeUiSessionState(merged);
         this._configs[fileName] = merged;
         return merged;
       } catch {}
@@ -167,7 +183,9 @@ export class Engine {
 
   async saveConfigFile(fileName, data) {
     this._configs[fileName] = data;
-    const serialized = `${JSON.stringify(data, null, 2)}\n`;
+    const toPersist =
+      fileName === 'uiSettings.json' ? this._sanitizeUiSessionState(data) : data;
+    const serialized = `${JSON.stringify(toPersist, null, 2)}\n`;
 
     if (import.meta.env.DEV) {
       try {

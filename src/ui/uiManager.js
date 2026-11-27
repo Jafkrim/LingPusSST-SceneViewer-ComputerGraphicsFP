@@ -110,6 +110,13 @@ export class UIManager {
     this.pawnManager = pawnManager;
 
     this.uiConfig = mergeUiConfig(structuredClone(defaultUiSettings), config.ui ?? {});
+    // Always initialize workspace panels and Render tab to defaultUiSettings on refresh
+    this.uiConfig.panels = { ...defaultUiSettings.panels };
+    this.uiConfig.editorPanel = {
+      ...this.uiConfig.editorPanel,
+      activeTab: defaultUiSettings.editorPanel.activeTab,
+    };
+
     this.viewMode = this.uiConfig.viewMode;
     this.hudHidden = Boolean(this.uiConfig.hudHidden);
 
@@ -484,7 +491,7 @@ export class UIManager {
 
   _applyUiConfig(incoming) {
     const merged = mergeUiConfig(this.uiConfig, incoming);
-    // Always restore default workspace layout & Render tab on page refresh
+    // Always restore default workspace panels & Render tab on page refresh
     merged.panels = { ...defaultUiSettings.panels };
     merged.editorPanel = {
       ...merged.editorPanel,
@@ -509,12 +516,21 @@ export class UIManager {
     this.editorPanel?.applyConfig?.(merged.editorPanel);
     this.editorPanel?.renderPanel?.applyConfig?.(merged);
     this.viewportGizmoPanel?.setVisible?.(Boolean(merged.panels.viewportGizmoVisible));
-    this._applyUiScale(merged.uiScale.value / 100);
+    this._applyUiScale(this.uiConfig.uiScale.value / 100);
+    this._applyAnimationsConfig(this.uiConfig.animations);
     this._syncDockOffsets(
-      merged.panels.editorVisible ? 1 : 0,
-      merged.panels.contentBrowserVisible ? 1 : 0
+      this.uiConfig.panels.editorVisible ? 1 : 0,
+      this.uiConfig.panels.contentBrowserVisible ? 1 : 0
     );
     this._applyHudVisibility();
+
+    this.settingsPanel?.setVisible?.(Boolean(this.uiConfig.panels.settingsVisible));
+    this.statsPanel?.setVisible?.(Boolean(this.uiConfig.panels.statsVisible));
+    this.contentBrowserPanel?.setVisible?.(Boolean(this.uiConfig.panels.contentBrowserVisible));
+    this.editorPanel?.setVisible?.(Boolean(this.uiConfig.panels.editorVisible));
+    this.editorPanel?.setActiveTab?.(this.uiConfig.editorPanel.activeTab);
+    this.editorPanel?.applyConfig?.(this.uiConfig.editorPanel);
+    this.viewportGizmoPanel?.setVisible?.(Boolean(this.uiConfig.panels.viewportGizmoVisible));
   }
 
   _emitSave() {

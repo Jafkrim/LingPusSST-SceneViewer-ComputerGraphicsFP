@@ -1,6 +1,6 @@
 {
   "storageKey": "lingpus_sst_ui_settings_v1",
-  "theme": "builtInLight",
+  "theme": "builtInDark",
   "viewMode": 1,
   "hudHidden": false,
   "uiScale": {
@@ -18,10 +18,10 @@
   },
   "panels": {
     "settingsVisible": false,
-    "statsVisible": false,
-    "contentBrowserVisible": false,
+    "statsVisible": true,
+    "contentBrowserVisible": true,
     "editorVisible": true,
-    "viewportGizmoVisible": false
+    "viewportGizmoVisible": true
   },
   "settingsPanel": {
     "title": "Settings",
