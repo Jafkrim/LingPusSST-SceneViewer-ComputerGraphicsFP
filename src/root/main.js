@@ -1,7 +1,10 @@
 import { Engine } from '@/engine/engine.js';
 import { EventBus } from '@/engine/eventBus.js';
 import { InputManager } from '@/engine/inputManager.js';
+import { AssetResolver } from '@/engine/assetResolver.js';
 import { SceneManager } from '@/world/sceneManager.js';
+import { SpatialIndex } from '@/world/spatialIndex.js';
+import { SceneSerializer } from '@/world/sceneSerializer.js';
 import { PawnManager } from '@/pawn/pawnManager.js';
 import { SurveyorController } from '@/pawn/controllers/surveyorController.js';
 import { DroneController } from '@/pawn/controllers/droneController.js';
@@ -11,8 +14,6 @@ import { ViewportGuides } from '@/rendering/viewportGuides.js';
 import { RenderPipeline } from '@/rendering/renderPipeline.js';
 import { PRStyle } from '@/rendering/styles/prStyle.js';
 import { UIManager } from '@/ui/uiManager.js';
-import defaultKeybinds from '@/config/keybinds.json';
-import defaultCameraSettings from '@/config/cameraSettings.json';
 
 const CAMERA_MODE_ACTIONS = Object.freeze({
   'camera.mode.surveyor': 'surveyor',
@@ -39,13 +40,36 @@ function main() {
 
   const eventBus = new EventBus();
   const engine = new Engine({ canvas, eventBus });
+
+  const initialKeybinds = engine.getConfig('keybinds.json');
+  const initialCameraSettings = engine.getConfig('cameraSettings.json');
+  const initialUiSettings = engine.getConfig('uiSettings.json');
+
   const inputManager = engine.register(
     'inputManager',
-    new InputManager({ target: canvas, eventBus, keybinds: defaultKeybinds }),
+    new InputManager({ target: canvas, eventBus, keybinds: initialKeybinds }),
     0
   );
 
+  const assetResolver = engine.register(
+    'assetResolver',
+    new AssetResolver({ eventBus }),
+    5
+  );
+
   const sceneManager = engine.register('sceneManager', new SceneManager({ eventBus }), 10);
+
+  const spatialIndex = engine.register(
+    'spatialIndex',
+    new SpatialIndex({ sceneManager, eventBus }),
+    15
+  );
+
+  const sceneSerializer = engine.register(
+    'sceneSerializer',
+    new SceneSerializer({ sceneManager, assetResolver, eventBus }),
+    16
+  );
 
   const pawnManager = engine.register(
     'pawnManager',
@@ -62,20 +86,25 @@ function main() {
     camera: pawnManager.camera,
     inputManager,
     eventBus,
+    spatialIndex,
   };
 
-  pawnManager.registerController(
-    'surveyor',
-    new SurveyorController({ ...controllerDeps, config: defaultCameraSettings.surveyor })
-  );
-  pawnManager.registerController(
-    'drone',
-    new DroneController({ ...controllerDeps, config: defaultCameraSettings.drone })
-  );
-  pawnManager.registerController(
-    'walk',
-    new WalkController({ ...controllerDeps, config: defaultCameraSettings.walk })
-  );
+  const surveyorController = new SurveyorController({
+    ...controllerDeps,
+    config: initialCameraSettings.surveyor,
+  });
+  const droneController = new DroneController({
+    ...controllerDeps,
+    config: initialCameraSettings.drone,
+  });
+  const walkController = new WalkController({
+    ...controllerDeps,
+    config: initialCameraSettings.walk,
+  });
+
+  pawnManager.registerController('surveyor', surveyorController);
+  pawnManager.registerController('drone', droneController);
+  pawnManager.registerController('walk', walkController);
   pawnManager.setMode('surveyor');
 
   engine.register('lightingRig', new LightingRig({ scene: sceneManager.scene, eventBus }), 30);
@@ -103,9 +132,59 @@ function main() {
 
   engine.register(
     'uiManager',
-    new UIManager({ root: hudRoot, eventBus, renderPipeline }),
+    new UIManager({
+      root: hudRoot,
+      eventBus,
+      renderPipeline,
+      assetResolver,
+      config: { ui: initialUiSettings },
+    }),
     110
   );
+
+  // UE5 Content Drawer behavior: force Surveyor mode on open; close when clicking LMB/RMB on viewport
+  eventBus.on('ui:contentBrowserVisibilityChanged', ({ visible } = {}) => {
+    if (visible && pawnManager.activeMode !== 'surveyor') {
+      pawnManager.setMode('surveyor');
+    }
+  });
+
+  eventBus.on('input:pointerdown', ({ button } = {}) => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    if (button === 0 || button === 2) {
+      eventBus.emit('ui:closeContentBrowser');
+    }
+  });
+
+  // Route double-clicked Content Browser items to scene/environment loaders
+  eventBus.on('content:activateAsset', async (item) => {
+    if (!item?.logicalPath) return;
+    try {
+      if (item.category === 'models' || item.category === 'prefabs') {
+        await sceneSerializer.spawnEntityFromAsset(item.logicalPath);
+      } else if (item.category === 'scenes') {
+        await sceneSerializer.loadScene(item.logicalPath);
+      } else if (item.category === 'environments') {
+        eventBus.emit('envir  onment:loadRequest', { logicalPath: item.logicalPath });
+      }
+    } catch (err) {
+      console.error('Failed to activate content asset:', err);
+    }
+  });
+
+  // Apply hydrated disk/folder/reset configs across subsystems
+  eventBus.on('config:loaded', ({ fileName, data } = {}) => {
+    if (!data) return;
+    if (fileName === 'keybinds.json') {
+      inputManager.setKeybinds(data);
+    } else if (fileName === 'cameraSettings.json') {
+      if (data.surveyor) surveyorController.configure(data.surveyor);
+      if (data.drone) droneController.configure(data.drone);
+      if (data.walk) walkController.configure(data.walk);
+    }
+  });
 
   eventBus.on('input:action:down', ({ action } = {}) => {
     if (action in CAMERA_MODE_ACTIONS) {
@@ -116,6 +195,10 @@ function main() {
     if (action in VIEW_MODE_ACTIONS) {
       eventBus.emit('view:setMode', { mode: VIEW_MODE_ACTIONS[action], action });
     }
+  });
+
+  assetResolver.refreshManifest().catch((err) => {
+    console.warn('Content manifest discovery failed:', err);
   });
 
   window.addEventListener('beforeunload', () => engine.dispose(), { once: true });

@@ -3,12 +3,108 @@
   "theme": "builtInDark",
   "viewMode": 1,
   "hudHidden": false,
-  "fontScale": {
-    "default": 100,
-    "step": 5
+  "uiScale": {
+    "value": 120,
+    "min": 80,
+    "max": 160
   },
   "panels": {
     "settingsVisible": true,
-    "statsVisible": true
+    "statsVisible": true,
+    "contentBrowserVisible": false
+  },
+  "contentBrowser": {
+    "scopes": [
+      "engineContent",
+      "userContent"
+    ],
+    "folders": [
+      "environments",
+      "models",
+      "prefabs",
+      "scenes"
+    ],
+    "categories": [
+      {
+        "id": "folder",
+        "label": "Folder",
+        "extensions": []
+      },
+      {
+        "id": "scene",
+        "label": "Scene",
+        "extensions": [
+          ".scene.json"
+        ]
+      },
+      {
+        "id": "prefab",
+        "label": "Prefab",
+        "extensions": [
+          ".prefab.json"
+        ]
+      },
+      {
+        "id": "exr",
+        "label": "EXR",
+        "extensions": [
+          ".exr"
+        ]
+      },
+      {
+        "id": "hdr",
+        "label": "HDR",
+        "extensions": [
+          ".hdr"
+        ]
+      },
+      {
+        "id": "glb",
+        "label": "GLB",
+        "extensions": [
+          ".glb"
+        ]
+      },
+      {
+        "id": "gltf",
+        "label": "GLTF",
+        "extensions": [
+          ".gltf"
+        ]
+      },
+      {
+        "id": "binary",
+        "label": "Binary",
+        "extensions": [
+          ".bin"
+        ]
+      },
+      {
+        "id": "texture",
+        "label": "Texture",
+        "extensions": [
+          ".png",
+          ".jpg",
+          ".jpeg",
+          ".webp",
+          ".tga"
+        ]
+      }
+    ],
+    "activeFilters": [
+      "folder",
+      "prefab",
+      "exr",
+      "hdr",
+      "glb",
+      "gltf",
+      "binary",
+      "texture",
+      "scene"
+    ],
+    "hierarchyVisible": true,
+    "filtersVisible": true,
+    "searchMinChars": 1,
+    "expandedNodes": []
   }
 }

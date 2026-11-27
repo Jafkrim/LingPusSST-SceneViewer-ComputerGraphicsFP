@@ -15,7 +15,6 @@ export class SurveyorController extends BaseController {
         orbitModifier: 'camera.orbit.modifier',
         orbitRotate: 'camera.orbit.rotate',
         orbitPan: 'camera.orbit.pan',
-        orbitZoom: 'camera.orbit.zoom',
         zoomIn: 'camera.zoomIn',
         zoomOut: 'camera.zoomOut',
         focus: 'camera.focus',
@@ -70,9 +69,11 @@ export class SurveyorController extends BaseController {
       this.eventBus.on('selection:changed', ({ target, position } = {}) => {
         const pos = position ?? target?.position ?? null;
         this.setTarget(pos);
+        if (this.active) this._syncCursorAndLock();
       }),
       this.eventBus.on('selection:cleared', () => {
         this.clearTarget();
+        if (this.active) this._syncCursorAndLock();
       }),
       this.eventBus.on('input:action:down', ({ action } = {}) => {
         if (!this.active) return;
@@ -85,8 +86,7 @@ export class SurveyorController extends BaseController {
         } else if (
           action === a.orbitModifier ||
           action === a.orbitRotate ||
-          action === a.orbitPan ||
-          action === a.orbitZoom
+          action === a.orbitPan
         ) {
           this._syncCursorAndLock();
         } else if (action === a.focus && this.target) {
@@ -106,14 +106,18 @@ export class SurveyorController extends BaseController {
         } else if (
           action === a.orbitModifier ||
           action === a.orbitRotate ||
-          action === a.orbitPan ||
-          action === a.orbitZoom
+          action === a.orbitPan
         ) {
           this._syncCursorAndLock();
         }
       }),
-      this.eventBus.on('input:wheel', ({ deltaY = 0 } = {}) => {
+      this.eventBus.on('input:wheel', ({ deltaY = 0, ctrlKey = false, altKey = false } = {}) => {
         if (!this.active || this._isFlyActive() || !this.target || deltaY === 0) return;
+
+        // Dolly near/far only when an object is selected and using Alt+Scroll or trackpad pinch (ctrlKey)
+        const isAltOrPinch = this._isOrbitModifierActive() || altKey || ctrlKey;
+        if (!isAltOrPinch) return;
+
         const mult = this._getOrbitSpeedMultiplier();
         const stepFactor = Math.pow(this.config.dollySpeed, mult);
         this._dollyTarget(deltaY > 0 ? stepFactor : 1 / stepFactor);
@@ -183,13 +187,10 @@ export class SurveyorController extends BaseController {
   _syncCursorAndLock() {
     const a = this.config.actions;
     const isFly = this._isFlyActive();
-    const isOrbitDrag =
-      !isFly &&
-      this._isOrbitModifierActive() &&
-      (this.inputManager.isActionActive(a.orbitRotate) ||
-        this.inputManager.isActionActive(a.orbitPan) ||
-        this.inputManager.isActionActive(a.orbitZoom));
+    const canOrbitRotate = Boolean(this.target) && this.inputManager.isActionActive(a.orbitRotate);
+    const canOrbitPan = this.inputManager.isActionActive(a.orbitPan);
 
+    const isOrbitDrag = !isFly && this._isOrbitModifierActive() && (canOrbitRotate || canOrbitPan);
     const hideAndLock = isFly || isOrbitDrag;
 
     this.inputManager.setCursorHidden(hideAndLock);
@@ -276,6 +277,13 @@ export class SurveyorController extends BaseController {
     const isFly = this._isFlyActive();
     this._updateFovZoom(dt, isFly);
 
+    const pinchDelta = this.inputManager.delta?.pinch ?? 0;
+    if (!isFly && this.target && pinchDelta !== 0) {
+      const mult = this._getOrbitSpeedMultiplier();
+      const stepFactor = Math.pow(this.config.dollySpeed, mult * (Math.abs(pinchDelta) / 40));
+      this._dollyTarget(pinchDelta < 0 ? stepFactor : 1 / stepFactor);
+    }
+
     this._syncAngles();
     if (Math.abs(this._roll) > 1e-4) {
       this._roll *= Math.exp(-this.config.rollRecoverySpeed * dt);
@@ -312,18 +320,12 @@ export class SurveyorController extends BaseController {
       return;
     }
 
-    // 2. Orbit mode (strictly bound to camera.orbit.* actions)
+    // 2. Orbit mode
     if (moveX === 0 && moveY === 0) return;
 
-    if (this.inputManager.isActionActive(a.orbitZoom) && this.target) {
-      const mult = this._getOrbitSpeedMultiplier();
-      const stepFactor = Math.pow(this.config.dollySpeed, mult);
-      this._dollyTarget(moveY > 0 ? stepFactor : 1 / stepFactor);
-    } else if (this.inputManager.isActionActive(a.orbitRotate)) {
+    if (this.inputManager.isActionActive(a.orbitRotate)) {
       if (this.target) {
         this._orbitTarget(moveX, moveY);
-      } else {
-        this._rotateInPlace(moveX, moveY, this.config.orbitSpeed);
       }
     } else if (this.inputManager.isActionActive(a.orbitPan)) {
       this._pan(moveX, moveY);

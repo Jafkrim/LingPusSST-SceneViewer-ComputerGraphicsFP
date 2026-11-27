@@ -55,7 +55,7 @@ public/
 ├── engineContent/         # Built-in engine-shipped packs
 │   └── starterPack/       # Default pack & structural template for custom user packs
 │       ├── environments/  # Skybox HDRIs & Image-Based Lighting maps (.hdr, .exr)
-│       ├── models/        # Placeable 3D models (.glb primary; .gltf in per-asset folder)
+│       ├── models/        # Placeable 3D models (.glb, .gltf, .bin) & textures (.png, .jpg, .jpeg, .webp, .tga)
 │       ├── prefabs/       # Reusable multi-mesh groups & furniture sets (.prefab.json)
 │       ├── scenes/        # Saved scene layouts & lighting presets (.scene.json)
 └── userContent/           # Custom user packs following the starterPack hierarchy
@@ -92,6 +92,15 @@ HUD components in `src/ui/panels/` and viewport guides in `src/rendering/` must 
 | | `--viewport-axis-x` | World X-axis guide line (`ViewportGuides`) | `#ff0000` | `#ff0000` |
 | | `--viewport-axis-y` | World Y-axis guide line (`ViewportGuides`) | `#00ff00` | `#00ff00` |
 | | `--viewport-axis-z` | World Z-axis guide line (`ViewportGuides`) | `#0000ff` | `#0000ff` |
+| **Content Browser** | `--cb-cat-folder` | Folder category badge & card accent | `#d99b26` | `#b45309` |
+| | `--cb-cat-scene` | Scene (`.scene.json`) category badge & card accent | `#f97316` | `#c2410c` |
+| | `--cb-cat-prefab` | Prefab (`.prefab.json`) category badge & card accent | `#ec4899` | `#be185d` |
+| | `--cb-cat-exr` | EXR (`.exr`) environment map category badge & card accent | `#a855f7` | `#7e22ce` |
+| | `--cb-cat-hdr` | HDR (`.hdr`) environment map category badge & card accent | `#10b981` | `#047857` |
+| | `--cb-cat-glb` | Binary glTF (`.glb`) category badge & card accent | `#3b82f6` | `#1d4ed8` |
+| | `--cb-cat-gltf` | JSON glTF (`.gltf`) category badge & card accent | `#06b6d4` | `#0e7490` |
+| | `--cb-cat-binary` | glTF binary buffer (`.bin`) category badge & card accent | `#64748b` | `#475569` |
+| | `--cb-cat-texture` | Strict texture (`.png`, `.jpg`, `.jpeg`, `.webp`, `.tga`) badge & card accent | `#ef4444` | `#dc2626` |
 
 #### Layout & Typography Tokens (Static Across Themes)
 | Token | Role & Usage | Default Value |
@@ -132,7 +141,16 @@ Custom themes use a declarative **JSON** schema so external palettes can be vali
     "--viewport-grid-opacity": "0.8",
     "--viewport-axis-x": "#ff0000",
     "--viewport-axis-y": "#00ff00",
-    "--viewport-axis-z": "#0000ff"
+    "--viewport-axis-z": "#0000ff",
+    "--cb-cat-folder": "#d99b26",
+    "--cb-cat-scene": "#f97316",
+    "--cb-cat-prefab": "#ec4899",
+    "--cb-cat-exr": "#a855f7",
+    "--cb-cat-hdr": "#10b981",
+    "--cb-cat-glb": "#3b82f6",
+    "--cb-cat-gltf": "#06b6d4",
+    "--cb-cat-binary": "#64748b",
+    "--cb-cat-texture": "#ef4444"
   }
 }
 ```
@@ -144,14 +162,14 @@ Custom themes use a declarative **JSON** schema so external palettes can be vali
 src/config/
 ├── cameraSettings.json   # Per-mode speeds, Sprint/Alt multipliers, FOV/distance limits, drone inertia/tilt, and roll recovery.
 ├── keybinds.json         # Default action-to-input mappings loaded by InputManager and resettable in Settings.
-└── uiSettings.json       # Default UI preferences.
+└── uiSettings.json       # Default UI preferences, panel visibility, and Content Browser category/filter rules.
 ```
 
 #### Core Engine (`src/engine/`)
 Core runtime systems decoupled from rendering styles, scene state, and UI components:
 ```text
 src/engine/
-├── assetResolver.js    # Resolves logical paths across engineContent/ and userContent/ and routes extensions to loaders.
+├── assetResolver.js    # Live-watches engineContent/ and userContent/ manifests and routes extensions to loaders.
 ├── engine.js           # Runs the main frame loop, clamps delta time, handles viewport resizing, and registers subsystems.
 ├── eventBus.js         # Typed publish/subscribe hub for decoupled cross-module events.
 ├── inputManager.js     # Captures keyboard, pointer, wheel, and gesture input, also blocks browser zoom and buffers deltas.
@@ -229,7 +247,7 @@ DOM overlay panels decoupled from WebGL rendering logic and scene state:
 ```text
 src/ui/
 ├── panels/                      # Modular HUD control panels
-│   ├── contentBrowserPanel.js   # Browses engineContent/ and userContent/ assets and scene hierarchy items.
+│   ├── contentBrowserPanel.js   # Content drawer with auto-compacting hierarchy, category filters, relevance search, and marquee multi-select.
 │   ├── inspectorPanel.js        # Edits transforms, material properties, and mesh stats for the selected object.
 │   ├── renderPanel.js           # Controls render styles, time of day, render passes, and scene export actions.
 │   ├── settingsPanel.js         # Manages graphics presets, post-processing toggles, and keybind settings.
@@ -259,46 +277,51 @@ src/world/
 ```
 
 ### 5. Controls & Rebindable Action Contract (`src/engine/inputManager.js` & `src/config/keybinds.json`)
-All camera controllers, tools, and UI shortcuts query **logical action IDs** from `InputManager` rather than hardcoded key literals. Default bindings live in `src/config/keybinds.json` and can be overridden at runtime via `settings:keybindsChanged`. Mouse bindings use **LMB**, **RMB**, and **Alt**-modified gestures (avoiding **MMB** for full laptop touchpad support).
+
+All camera controllers, viewport tools, and UI panels query **logical action IDs** from `InputManager` rather than hardcoded key literals. Default bindings live in `src/config/keybinds.json` and can be overridden at runtime via `settings:keybindsChanged`. Mouse bindings use **LMB**, **RMB**, and **Alt**-modified gestures (avoiding **MMB** for full laptop touchpad support).
 
 #### Cursor & Controller Behavior Rules
-- **Surveyor (`surveyorController.js`):** Hybrid viewport camera combining **Orbit** and **Fly** in one mode:
-  - **Orbit State (Default / RMB Released):** Mouse cursor moves freely to hover and click objects. Without a selection, `Alt + LMB Drag` rotates in-place, `Alt + RMB Drag` pans, `Alt + LMB + RMB Drag` or `Wheel` adjusts FOV, and `F` does nothing. With a selected object/prefab, `Alt` hides/locks the cursor for target-centric orbit (`Alt + LMB`), pan (`Alt + RMB`), dolly zoom (`Alt + LMB + RMB` / `Wheel`), and `F` frames the selection.
-  - **Fly State (RMB Held without `Alt`):** Captures and hides the cursor for free-look (`RMB` + mouse move) with `WASD` horizontal movement, `E`/`Q` vertical movement, `Shift` sprint, and `Alt` slow precision. Releasing `RMB` immediately returns to Orbit state and restores the cursor.
-- **Drone (`droneController.js`):** Simulates quadcopter flight with velocity inertia, pitch/roll banking into turns, and thrust along the drone's local forward, right, and tilted rotor `up` vector (`E`/`Q`).
-- **Walk (`walkController.js`):** First-person gravity movement (`WASD`, `Space` to jump when grounded). Contains no virtual floor at `y = 0`, allowing free-fall off edges until `spatialIndex.js` resolves collision with scene geometry.
+
+* **Surveyor (`surveyorController.js`):** Hybrid viewport camera combining **Orbit** and **Fly** in one mode, plus smooth roll recovery (`rollRecoverySpeed`):
+  * **Orbit State (Default / `RMB` Released):** Mouse cursor moves freely to hover and click objects. Without a selection (`target === null`), `Alt + LMB Drag` does nothing, `Alt + RMB Drag` hides/locks the cursor to pan across the screen plane using `fallbackPanDistance`, `Alt + Scroll` / pinch does nothing, and `F` does nothing. With a selected object/prefab, `Alt + LMB Drag` hides/locks the cursor to orbit around the target (`orbitSpeed`), `Alt + RMB Drag` hides/locks the cursor to pan both camera and target (`panSpeed`), `Alt + Scroll` or trackpad/touch pinch dollies near/far around the target (`dollySpeed`, accelerated by `Shift`), and `F` frames the selection (`defaultFocusDistance`).
+  * **Fly State (`RMB` Held without `Alt`):** Captures and hides the cursor for free-look (`RMB` + mouse move) with `WASD` horizontal movement, `E`/`Q` vertical movement, `Shift` sprint, and `Alt` slow precision. Releasing `RMB` immediately returns to Orbit state and restores the cursor.
+* **Drone (`droneController.js`):** Simulates quadcopter flight with velocity inertia (`horizontalAccel`, `verticalAccel`, `horizontalDrag`, `verticalDrag`), angular damping, pitch/roll banking into turns (`maxTiltDeg`, `tiltResponsiveness`), sphere collision bounce (`collisionRadius`, `collisionBounce`), and thrust along the drone's local forward, right, and tilted rotor `up` vector (`E`/`Q`). Automatically requests pointer lock on activation and `LMB` click, or looks while `RMB` is held; `Esc` releases pointer lock.
+* **Walk (`walkController.js`):** First-person gravity movement (`WASD`, `Space` to jump when grounded via `spatialIndex.resolveWalk`) with smooth roll recovery. Contains no virtual floor at `y = 0`, allowing free-fall off edges until `spatialIndex.js` resolves collision with scene geometry. Requests pointer lock on activation and `LMB` click, or looks while `RMB` is held; `Esc` releases pointer lock.
+* **FOV Zoom & Recovery (`baseController.js`):** Holding `C` (`camera.zoomIn`) or `Z` (`camera.zoomOut`) narrows or widens camera FOV (`fovZoomSpeed`, clamped between `minFov` and `maxFov`) in both **Orbit** and **Fly** states (as well as **Drone** and **Walk**). On release, FOV smoothly recovers back toward `defaultFov` (`fovRecoverySpeed`)—except during **Surveyor Fly** (`holdReturn = true`), which holds the zoomed FOV while `RMB` fly remains active and recovers once `RMB` is released.
 
 #### Default Action Bindings (`src/config/keybinds.json`)
+
 | Category | Logical Action ID | Default Input(s) | Behavior |
 | :--- | :--- | :--- | :--- |
 | **Mode Switching** | `camera.mode.surveyor` | `1` (`Digit1`) | Switch active controller to **Surveyor** (Hybrid Orbit/Fly). |
 | | `camera.mode.drone` | `2` (`Digit2`) | Switch active controller to **Drone**. |
 | | `camera.mode.walk` | `3` (`Digit3`) | Switch active controller to **Walk**. |
 | **View Modes** | `view.mode.1` – `view.mode.6` | `4` – `9` (`Digit4`–`Digit9`) | Switch viewport rendering/diagnostic view mode (`Lit`, `Unlit`, `Wireframe`, `Lighting`, `Reflection`, `Collision`). |
-| **Surveyor Orbit** | `camera.orbit.modifier` | `Alt` (`AltLeft`, `AltRight`) | Activates Orbit manipulation when `RMB` fly is not active. |
-| | `camera.orbit.rotate` | `Alt + LMB Drag` | Rotates camera in-place (unselected) or orbits around selected object. |
-| | `camera.orbit.pan` | `Alt + RMB Drag` | Pans camera or selected-object pivot across screen plane. |
-| | `camera.orbit.zoom` | `Alt + LMB + RMB Drag` / `Wheel` | Adjusts **FOV** (unselected) or dollies near/far around selected object. |
-| | `camera.focus` | `F` (`KeyF`) | Frames the active selection (only active when an object/prefab is selected). |
-| **Fly / Drone / Walk** | `camera.fly.engage` / `camera.look` | `RMB` (`Mouse2`) / Captured Pointer | Engages Fly mode in **Surveyor** and rotates camera yaw/pitch while cursor is captured. |
+| **Surveyor Orbit** | `camera.orbit.modifier` | `Alt` | Activates Orbit manipulation when `RMB` fly is not active. |
+| | `camera.orbit.rotate` | `Alt + LMB Drag` | When an object is selected, hides/locks cursor and orbits around the target; does nothing when unselected. |
+| | `camera.orbit.pan` | `Alt + RMB Drag` | Hides/locks cursor; pans camera (using `fallbackPanDistance`) or selected-object pivot across screen plane (`Shift` accelerates). |
+| | *(Wheel / Pinch Dolly)* | `Alt + Scroll` / Pinch | When an object is selected, dollies camera near/far around target (`Shift` accelerates); does nothing when unselected. |
+| | `camera.focus` | `F` (`KeyF`) | Frames the active selection at `defaultFocusDistance` or current distance (only active when an object/prefab is selected). |
+| **Fly / Drone / Walk** | `camera.fly.engage` / `camera.look` | `RMB` (`Mouse2`) / Pointer Lock | Engages Fly mode in **Surveyor** (`RMB` without `Alt`) or rotates camera yaw/pitch while pointer is locked or `RMB` is held (**Drone**/**Walk**). |
 | | `camera.moveForward` | `W` (`KeyW`) | Moves forward. |
 | | `camera.moveBackward` | `S` (`KeyS`) | Moves backward. |
 | | `camera.moveLeft` | `A` (`KeyA`) | Strafes left. |
 | | `camera.moveRight` | `D` (`KeyD`) | Strafes right. |
 | | `camera.moveUp` | `E` (`KeyE`) | Ascends vertically (**Surveyor Fly**) or thrusts along local rotor up-vector (**Drone**). |
 | | `camera.moveDown` | `Q` (`KeyQ`) | Descends vertically (**Surveyor Fly**) or thrusts downward along local rotor up-vector (**Drone**). |
+| | `camera.zoomIn` | `C` (`KeyC`) | Zooms in by narrowing camera FOV (`fovZoomSpeed`); recovers to `defaultFov` on release (held while in **Surveyor Fly**). |
+| | `camera.zoomOut` | `Z` (`KeyZ`) | Zooms out by widening camera FOV (`fovZoomSpeed`); recovers to `defaultFov` on release (held while in **Surveyor Fly**). |
 | | `camera.jump` | `Space` | Jumps when grounded (**Walk** mode only). |
-| | `camera.sprint` | `Shift` (`ShiftLeft`, `ShiftRight`) | Applies per-mode sprint speed multiplier while held. |
-| | `camera.slow` | `Alt` (`AltLeft`, `AltRight`) | Applies per-mode slow multiplier while held. |
-| **Viewport Tools** | `tool.select` | `LMB` (`Mouse0`) | Raycasts and selects mesh via `selectionTool.js` (or re-captures cursor when clicked in **Drone**/**Walk**). |
+| | `camera.sprint` | `Shift` | Applies per-mode `sprintMultiplier` to movement speed (and Surveyor pan/dolly speed) while held. |
+| | `camera.slow` | `Alt` | Applies per-mode `slowMultiplier` to movement speed while held. |
+| **Viewport Tools** | `tool.select` | `LMB` (`Mouse0`) | Raycasts and selects mesh via `selectionTool.js` in **Surveyor**, or re-locks cursor when clicked inside viewport in **Drone**/**Walk**. |
 | | `tool.measure` | `M` (`KeyM`) | Toggles two-point surface distance tool (`measurementTool.js`). |
 | | `tool.sectionCut` | `X` (`KeyX`) | Toggles interactive clipping plane (`sectionCutTool.js`, **Surveyor** mode only). |
-| | `tool.cancel` | `Esc` (`Escape`) | Releases cursor lock in **Drone**/**Walk**, or cancels active tool/placement/selection in **Surveyor**. |
-| **UI & Panels** | `ui.toggleHud` | `H` (`KeyH`) | Toggles Game Mode (hides/shows all HUD panels). |
-| | `ui.toggleContentBrowser` | `Shift + Space` | Toggles Content Browser drawer. |
-| | `ui.toggleSettings` | `\` (`Backslash`) | Toggles Settings panel (camera settings, keybinds, graphics presets, themes). |
+| | `tool.cancel` | `Esc` (`Escape`) | Releases cursor lock in **Drone**/**Walk**, or clears selection/target and active tool in **Surveyor**. |
+| **UI & Panels** | `ui.toggleHud` | `H` (`KeyH`) | Toggles Game Mode (hides/shows all HUD panels and viewport guides). |
+| | `ui.toggleContentBrowser` | `Shift + Space` | Toggles Content Browser drawer (forces Surveyor mode on open; closes on viewport LMB/RMB click). |
+| | `ui.toggleSettings` | `\` (`Backslash`) | Toggles Settings panel (camera settings, keybinds, UI theme, view mode, font scale). |
 | | `ui.toggleStats` | `]` (`BracketRight`) | Toggles real-time FPS / GPU performance overlay. |
-| | `ui.cycleTheme` | `T` (`KeyT`) | Cycles active UI theme preset. |
 
 ## Development Progress
 
@@ -323,7 +346,7 @@ All camera controllers, tools, and UI shortcuts query **logical action IDs** fro
 | `src/config/cameraSettings.json` | `5025241040` | WIP |
 | `src/config/keybinds.json` | `5025241040` | WIP |
 | `src/config/uiSettings.json` | `5025241040` | WIP |
-| `src/engine/assetResolver.js` | `TBD` | Pending |
+| `src/engine/assetResolver.js` | `5025241040` | WIP |
 | `src/engine/engine.js` | `5025241040` | WIP |
 | `src/engine/eventBus.js` | `5025241040` | WIP |
 | `src/engine/inputManager.js` | `5025241040` | WIP |
@@ -364,7 +387,7 @@ All camera controllers, tools, and UI shortcuts query **logical action IDs** fro
 | `src/tools/placementTool.js` | `TBD` | Pending |
 | `src/tools/sectionCutTool.js` | `TBD` | Pending |
 | `src/tools/selectionTool.js` | `TBD` | Pending |
-| `src/ui/panels/contentBrowserPanel.js` | `TBD` | Pending |
+| `src/ui/panels/contentBrowserPanel.js` | `5025241040` | WIP |
 | `src/ui/panels/inspectorPanel.js` | `TBD` | Pending |
 | `src/ui/panels/renderPanel.js` | `TBD` | Pending |
 | `src/ui/panels/settingsPanel.js` | `5025241040` | WIP |

@@ -62,7 +62,11 @@ export class SceneManager {
     this.entities.set(id, { id, object: object3D, metadata: object3D.userData.entityMeta });
     this.resourceTracker?.track?.(object3D);
 
-    this.eventBus.emit('scene:entityAdded', { id, object: object3D, metadata: object3D.userData.entityMeta });
+    this.eventBus.emit('scene:entityAdded', {
+      id,
+      object: object3D,
+      metadata: object3D.userData.entityMeta,
+    });
     this.eventBus.emit('scene:changed', { reason: 'add', id });
     return object3D;
   }

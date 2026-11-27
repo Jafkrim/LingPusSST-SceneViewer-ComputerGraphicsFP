@@ -14,7 +14,6 @@
   "camera.orbit.modifier": ["AltLeft", "AltRight"],
   "camera.orbit.rotate": ["AltLeft+Mouse0", "AltRight+Mouse0"],
   "camera.orbit.pan": ["AltLeft+Mouse2", "AltRight+Mouse2"],
-  "camera.orbit.zoom": ["AltLeft+Mouse0+Mouse2", "AltRight+Mouse0+Mouse2"],
   "camera.focus": ["KeyF"],
   "camera.look": ["Mouse2"],
   "camera.moveForward": ["KeyW"],

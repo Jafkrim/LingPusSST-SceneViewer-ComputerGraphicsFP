@@ -2,45 +2,44 @@ import defaultUiSettings from '@/config/uiSettings.json';
 import { ThemeManager } from './themes/themeManager.js';
 import { SettingsPanel } from './panels/settingsPanel.js';
 import { StatsPanel } from './panels/statsPanel.js';
+import { ContentBrowserPanel } from './panels/contentBrowserPanel.js';
+
+function normalizeUiScale(rawScale, baseScale = defaultUiSettings.uiScale) {
+  const min = typeof rawScale?.min === 'number' ? rawScale.min : baseScale.min;
+  const max = typeof rawScale?.max === 'number' ? rawScale.max : baseScale.max;
+  const val =
+    typeof rawScale === 'number'
+      ? rawScale
+      : typeof rawScale?.value === 'number'
+        ? rawScale.value
+        : baseScale.value;
+
+  return {
+    value: Math.min(max, Math.max(min, Math.round(val))),
+    min,
+    max,
+  };
+}
 
 function mergeUiConfig(base, override) {
   const safe = override && typeof override === 'object' ? override : {};
   return {
     ...base,
     ...safe,
-    fontScale: {
-      ...base.fontScale,
-      ...(safe.fontScale && typeof safe.fontScale === 'object' ? safe.fontScale : {}),
-    },
+    uiScale: normalizeUiScale(safe.uiScale, base.uiScale),
     panels: {
       ...base.panels,
       ...(safe.panels && typeof safe.panels === 'object' ? safe.panels : {}),
     },
+    contentBrowser: {
+      ...base.contentBrowser,
+      ...(safe.contentBrowser && typeof safe.contentBrowser === 'object' ? safe.contentBrowser : {}),
+    },
   };
 }
 
-function loadJsonFromStorage(storageKey, fallback) {
-  if (!storageKey || typeof window === 'undefined') return fallback;
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    if (!raw) return fallback;
-    return mergeUiConfig(fallback, JSON.parse(raw));
-  } catch {
-    return fallback;
-  }
-}
-
-function saveJsonToStorage(storageKey, data) {
-  if (!storageKey || typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(storageKey, JSON.stringify(data, null, 2));
-  } catch {
-    // Ignore storage quota or restricted context errors
-  }
-}
-
 export class UIManager {
-  constructor({ root, eventBus, renderPipeline, config = {} }) {
+  constructor({ root, eventBus, renderPipeline, assetResolver, config = {} }) {
     if (!root || !eventBus) {
       throw new Error('UIManager requires root and eventBus.');
     }
@@ -48,13 +47,9 @@ export class UIManager {
     this.root = root;
     this.eventBus = eventBus;
     this.renderPipeline = renderPipeline;
+    this.assetResolver = assetResolver ?? null;
 
-    const baseDefaults = mergeUiConfig(
-      { hudHidden: false, ...defaultUiSettings },
-      config.ui ?? {}
-    );
-
-    this.uiConfig = loadJsonFromStorage(baseDefaults.storageKey, baseDefaults);
+    this.uiConfig = mergeUiConfig(structuredClone(defaultUiSettings), config.ui ?? {});
     this.viewMode = this.uiConfig.viewMode;
     this.hudHidden = Boolean(this.uiConfig.hudHidden);
 
@@ -62,6 +57,7 @@ export class UIManager {
       toggleHud: 'ui.toggleHud',
       toggleSettings: 'ui.toggleSettings',
       toggleStats: 'ui.toggleStats',
+      toggleContentBrowser: 'ui.toggleContentBrowser',
       ...(config.actions ?? {}),
     };
 
@@ -88,79 +84,90 @@ export class UIManager {
     });
     this.statsPanel.mount(this.container);
 
-    this._applyFontScale((this.uiConfig.fontScale?.default ?? 100) / 100);
+    this.contentBrowserPanel = new ContentBrowserPanel({
+      eventBus: this.eventBus,
+      assetResolver: this.assetResolver,
+      config: this.uiConfig,
+    });
+    this.contentBrowserPanel.mount(this.container);
+
+    this._applyUiScale(this.uiConfig.uiScale.value / 100);
     this._applyHudVisibility();
-    this._savePrefs();
 
     this._unsubs = [
+      this.eventBus.on('config:loaded', ({ fileName, data } = {}) => {
+        if (fileName === 'uiSettings.json' && data) {
+          this._applyUiConfig(data);
+        }
+      }),
       this.eventBus.on('input:action:down', ({ action } = {}) => {
         if (action === this.actions.toggleHud) {
           this.toggleHud();
         } else if (action === this.actions.toggleSettings) {
           this.settingsPanel.toggle();
           this.uiConfig.panels.settingsVisible = this.settingsPanel.visible;
-          this._savePrefs();
+          this._emitSave();
         } else if (action === this.actions.toggleStats) {
           this.statsPanel.toggle();
           this.uiConfig.panels.statsVisible = this.statsPanel.visible;
-          this._savePrefs();
+          this._emitSave();
+        } else if (action === this.actions.toggleContentBrowser) {
+          this.contentBrowserPanel.toggle();
+          this.uiConfig.panels.contentBrowserVisible = this.contentBrowserPanel.visible;
+          this._emitSave();
         }
+      }),
+      this.eventBus.on('ui:closeContentBrowser', () => {
+        if (this.contentBrowserPanel.visible) {
+          this.contentBrowserPanel.setVisible(false);
+          this.uiConfig.panels.contentBrowserVisible = false;
+          this._emitSave();
+        }
+      }),
+      this.eventBus.on('ui:contentBrowserChanged', (patch = {}) => {
+        this.uiConfig.contentBrowser = {
+          ...this.uiConfig.contentBrowser,
+          ...patch,
+        };
+        this._emitSave();
       }),
       this.eventBus.on('theme:applied', (payload = {}) => {
         const nextTheme = payload.themeId ?? payload.id ?? this.themeManager?.activeThemeId;
-        if (typeof nextTheme === 'string' && nextTheme.length > 0) {
+        if (typeof nextTheme === 'string' && nextTheme.length > 0 && this.uiConfig.theme !== nextTheme) {
           this.uiConfig.theme = nextTheme;
-          this._savePrefs();
+          this._emitSave();
         }
       }),
-      this.eventBus.on('ui:fontScaleChanged', ({ percent, scale } = {}) => {
+      this.eventBus.on('ui:scaleChanged', ({ percent, scale } = {}) => {
         if (typeof scale === 'number' && !Number.isNaN(scale)) {
-          this._applyFontScale(scale);
-          this.uiConfig.fontScale.default =
+          const rawPercent =
             typeof percent === 'number' && !Number.isNaN(percent)
               ? percent
               : Math.round(scale * 100);
-          this._savePrefs();
+          const clamped = Math.min(
+            this.uiConfig.uiScale.max,
+            Math.max(this.uiConfig.uiScale.min, Math.round(rawPercent))
+          );
+
+          this._applyUiScale(clamped / 100);
+          if (this.uiConfig.uiScale.value !== clamped) {
+            this.uiConfig.uiScale.value = clamped;
+            this._emitSave();
+          }
         }
       }),
       this.eventBus.on('view:setMode', ({ mode } = {}) => {
-        if (typeof mode === 'number') {
+        if (typeof mode === 'number' && this.viewMode !== mode) {
           this.viewMode = mode;
           this.uiConfig.viewMode = mode;
-          this._savePrefs();
+          this._emitSave();
         }
       }),
     ];
   }
 
-  getSettingsJson() {
-    return JSON.stringify(
-      {
-        storageKey: this.uiConfig.storageKey,
-        theme: this.uiConfig.theme,
-        viewMode: this.viewMode,
-        hudHidden: this.hudHidden,
-        fontScale: { ...this.uiConfig.fontScale },
-        panels: { ...this.uiConfig.panels },
-      },
-      null,
-      2
-    );
-  }
-
-  downloadSettingsJson(fileName = 'uiSettings.json') {
-    const blob = new Blob([this.getSettingsJson()], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
-  applySettingsJson(jsonText) {
-    const parsed = JSON.parse(jsonText);
-    const merged = mergeUiConfig(this.uiConfig, parsed);
+  _applyUiConfig(incoming) {
+    const merged = mergeUiConfig(this.uiConfig, incoming);
     this.uiConfig = merged;
     this.viewMode = merged.viewMode;
     this.hudHidden = Boolean(merged.hudHidden);
@@ -170,24 +177,35 @@ export class UIManager {
     }
     this.settingsPanel?.setVisible?.(Boolean(merged.panels?.settingsVisible));
     this.statsPanel?.setVisible?.(Boolean(merged.panels?.statsVisible));
-    this._applyFontScale((merged.fontScale?.default ?? 100) / 100);
+    this.contentBrowserPanel?.setVisible?.(Boolean(merged.panels?.contentBrowserVisible));
+    this.contentBrowserPanel?.applyConfig?.(merged.contentBrowser);
+    this.settingsPanel?.setUiScale?.(merged.uiScale.value);
+    this._applyUiScale(merged.uiScale.value / 100);
     this._applyHudVisibility();
-    this._savePrefs();
   }
 
-  _savePrefs() {
-    saveJsonToStorage(this.uiConfig.storageKey, {
-      storageKey: this.uiConfig.storageKey,
-      theme: this.uiConfig.theme,
-      viewMode: this.viewMode,
-      hudHidden: this.hudHidden,
-      fontScale: { ...this.uiConfig.fontScale },
-      panels: { ...this.uiConfig.panels },
+  _emitSave() {
+    this.eventBus.emit('config:save', {
+      fileName: 'uiSettings.json',
+      data: {
+        storageKey: this.uiConfig.storageKey,
+        theme: this.uiConfig.theme,
+        viewMode: this.viewMode,
+        hudHidden: this.hudHidden,
+        uiScale: { ...this.uiConfig.uiScale },
+        panels: { ...this.uiConfig.panels },
+        contentBrowser: {
+          ...this.uiConfig.contentBrowser,
+          scopes: [...(this.uiConfig.contentBrowser?.scopes ?? [])],
+          categories: [...(this.uiConfig.contentBrowser?.categories ?? [])],
+          expandedNodes: [...(this.uiConfig.contentBrowser?.expandedNodes ?? [])],
+        },
+      },
     });
   }
 
-  _applyFontScale(scale) {
-    document.documentElement.style.setProperty('--ui-font-scale', String(scale));
+  _applyUiScale(scale) {
+    document.documentElement.style.setProperty('--ui-scale', String(scale));
   }
 
   _applyHudVisibility() {
@@ -199,7 +217,7 @@ export class UIManager {
     this.hudHidden = !this.hudHidden;
     this.uiConfig.hudHidden = this.hudHidden;
     this._applyHudVisibility();
-    this._savePrefs();
+    this._emitSave();
   }
 
   update(dt, ctx) {
@@ -213,6 +231,7 @@ export class UIManager {
     this._unsubs = [];
     this.settingsPanel.dispose();
     this.statsPanel.dispose();
+    this.contentBrowserPanel.dispose();
     this.container.remove();
   }
 }

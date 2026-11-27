@@ -26,6 +26,15 @@
     "--viewport-grid-opacity": "0.8",
     "--viewport-axis-x": "#ff0000",
     "--viewport-axis-y": "#00ff00",
-    "--viewport-axis-z": "#0000ff"
+    "--viewport-axis-z": "#0000ff",
+    "cb-cat-folder": "#d99b26",
+    "cb-cat-scene": "#f97316",
+    "cb-cat-prefab": "#ec4899",
+    "cb-cat-exr": "#a855f7",
+    "cb-cat-hdr": "#10b981",
+    "cb-cat-glb": "#3b82f6",
+    "cb-cat-gltf": "#06b6d4",
+    "cb-cat-binary": "#64748b",
+    "cb-cat-texture": "#ef4444"
   }
 }

@@ -1,3 +1,36 @@
+import defaultUiSettings from '@/config/uiSettings.json';
+import defaultCameraSettings from '@/config/cameraSettings.json';
+import defaultKeybinds from '@/config/keybinds.json';
+
+const STORAGE_PREFIX = 'lingpus_sst_config_v1:';
+const DEFAULT_CONFIGS = {
+  'uiSettings.json': defaultUiSettings,
+  'cameraSettings.json': defaultCameraSettings,
+  'keybinds.json': defaultKeybinds,
+};
+
+function deepMerge(base, override) {
+  if (!override || typeof override !== 'object' || Array.isArray(override)) {
+    return override !== undefined ? override : base;
+  }
+  const out = { ...(base && typeof base === 'object' ? base : {}) };
+  for (const [k, v] of Object.entries(override)) {
+    if (
+      v &&
+      typeof v === 'object' &&
+      !Array.isArray(v) &&
+      out[k] &&
+      typeof out[k] === 'object' &&
+      !Array.isArray(out[k])
+    ) {
+      out[k] = deepMerge(out[k], v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 export class Engine {
   constructor({ canvas, eventBus, config = {} }) {
     if (!canvas) throw new Error('Engine requires a valid canvas element.');
@@ -22,9 +55,13 @@ export class Engine {
     this._lastTime = 0;
     this._subsystems = new Map();
     this._ordered = [];
+    this._dirHandle = null;
+    this._configs = {};
 
     this._resizeObserver = new ResizeObserver(() => this._syncSize(true));
     this._resizeObserver.observe(this.canvas);
+
+    this._initConfigPersistence();
 
     this.eventBus.on('settings:graphicsChanged', (settings = {}) => {
       if (typeof settings.pixelRatioCap === 'number' && settings.pixelRatioCap > 0) {
@@ -35,6 +72,143 @@ export class Engine {
         this.maxDelta = settings.maxDelta;
       }
     });
+  }
+
+  _initConfigPersistence() {
+    for (const [fileName, defaults] of Object.entries(DEFAULT_CONFIGS)) {
+      this._configs[fileName] = this._readStorageSync(fileName, structuredClone(defaults));
+    }
+
+    this.eventBus.on('config:save', ({ fileName, data, merge = true } = {}) => {
+      if (!fileName || !data) return;
+      const base = this._configs[fileName] ?? DEFAULT_CONFIGS[fileName] ?? {};
+      const next = merge ? deepMerge(base, data) : data;
+      this.saveConfigFile(fileName, next);
+    });
+
+    this.eventBus.on('config:reset', ({ fileName } = {}) => {
+      if (fileName) this.resetConfigFile(fileName);
+    });
+
+    this.eventBus.on('config:linkDirectory', () => {
+      this.linkLocalConfigDir();
+    });
+
+    this.eventBus.on('settings:cameraChanged', (patch = {}) => {
+      const next = deepMerge(this._configs['cameraSettings.json'], patch);
+      this.saveConfigFile('cameraSettings.json', next);
+    });
+
+    this.eventBus.on('settings:keybindsChanged', ({ keybinds } = {}) => {
+      if (keybinds) this.saveConfigFile('keybinds.json', keybinds);
+    });
+
+    this.eventBus.on('settings:graphicsChanged', (patch = {}) => {
+      const next = deepMerge(this._configs['graphicsSettings.json'] ?? {}, patch);
+      this.saveConfigFile('graphicsSettings.json', next);
+    });
+
+    this.eventBus.on('settings:postProcessChanged', (patch = {}) => {
+      const next = deepMerge(this._configs['postProcessSettings.json'] ?? {}, patch);
+      this.saveConfigFile('postProcessSettings.json', next);
+    });
+
+    this._hydrateConfigsFromDisk();
+  }
+
+  _readStorageSync(fileName, fallback) {
+    if (import.meta.env.DEV) return fallback;
+    try {
+      const raw = window.localStorage.getItem(`${STORAGE_PREFIX}${fileName}`);
+      return raw ? deepMerge(fallback, JSON.parse(raw)) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  getConfig(fileName) {
+    return this._configs[fileName] ?? structuredClone(DEFAULT_CONFIGS[fileName] ?? {});
+  }
+
+  async loadConfigFile(fileName, fallback = DEFAULT_CONFIGS[fileName] ?? {}) {
+    if (import.meta.env.DEV) {
+      try {
+        const res = await fetch(`/__config/${encodeURIComponent(fileName)}`, { cache: 'no-store' });
+        if (res.ok) {
+          const merged = deepMerge(fallback, await res.json());
+          this._configs[fileName] = merged;
+          return merged;
+        }
+      } catch {}
+    }
+
+    if (this._dirHandle) {
+      try {
+        const fh = await this._dirHandle.getFileHandle(fileName);
+        const file = await fh.getFile();
+        const merged = deepMerge(fallback, JSON.parse(await file.text()));
+        this._configs[fileName] = merged;
+        return merged;
+      } catch {}
+    }
+
+    const stored = this._readStorageSync(fileName, fallback);
+    this._configs[fileName] = stored;
+    return stored;
+  }
+
+  async saveConfigFile(fileName, data) {
+    this._configs[fileName] = data;
+    const serialized = `${JSON.stringify(data, null, 2)}\n`;
+
+    if (import.meta.env.DEV) {
+      try {
+        await fetch(`/__config/${encodeURIComponent(fileName)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: serialized,
+        });
+      } catch {}
+    }
+
+    if (this._dirHandle) {
+      try {
+        const fh = await this._dirHandle.getFileHandle(fileName, { create: true });
+        const writable = await fh.createWritable();
+        await writable.write(serialized);
+        await writable.close();
+      } catch {}
+    }
+
+    try {
+      window.localStorage.setItem(`${STORAGE_PREFIX}${fileName}`, serialized);
+    } catch {}
+  }
+
+  async resetConfigFile(fileName) {
+    const defaults = structuredClone(DEFAULT_CONFIGS[fileName] ?? {});
+    await this.saveConfigFile(fileName, defaults);
+    this.eventBus.emit('config:loaded', { fileName, data: defaults });
+  }
+
+  async linkLocalConfigDir() {
+    if (!window.showDirectoryPicker) return false;
+    try {
+      this._dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      for (const [fileName, data] of Object.entries(this._configs)) {
+        await this.saveConfigFile(fileName, data);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async _hydrateConfigsFromDisk() {
+    for (const [fileName, defaults] of Object.entries(DEFAULT_CONFIGS)) {
+      const data = await this.loadConfigFile(fileName, structuredClone(defaults));
+      this.eventBus.emit('config:loaded', { fileName, data });
+    }
   }
 
   register(name, instance, priority = 50) {

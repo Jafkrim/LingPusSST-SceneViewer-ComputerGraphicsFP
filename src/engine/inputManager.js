@@ -346,14 +346,23 @@ export class InputManager {
     window.addEventListener('pointercancel', releasePointer, { capture: true, signal });
 
     window.addEventListener('wheel', (e) => {
+      // Always block native browser pinch/Ctrl+Wheel zoom even when hovering UI inputs/selects
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        return;
+      }
+
       if (this._isInteractiveUI(e.target)) return;
       e.preventDefault();
+      this._syncModifiersFromEvent(e);
       this.delta.wheelX += e.deltaX;
       this.delta.wheelY += e.deltaY;
       this.eventBus?.emit('input:wheel', {
         deltaX: e.deltaX,
         deltaY: e.deltaY,
         ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
       });
     }, { passive: false, capture: true, signal });
   }
