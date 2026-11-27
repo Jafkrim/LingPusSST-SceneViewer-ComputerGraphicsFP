@@ -8,6 +8,7 @@
     "--bg-input": "#383838",
     "--bg-hover": "#474747",
     "--bg-overlay": "rgba(0, 0, 0, 0.55)",
+    "--bg-modal-backdrop": "rgba(0, 0, 0, 0.68)",
     "--border-subtle": "#181818",
     "--border-widget": "#444444",
     "--text-primary": "#e6e6e6",

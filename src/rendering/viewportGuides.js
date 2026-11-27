@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import defaultUiSettings from '@/config/uiSettings.json';
 
 function readThemeColor(styles, token, fallback) {
   const raw = styles.getPropertyValue(token).trim();
@@ -19,7 +20,11 @@ export class ViewportGuides {
     this.scene = scene;
     this.eventBus = eventBus;
     this.visible = config.visible ?? true;
-    this._hudHidden = false;
+
+    this._guideFlags = {
+      ...defaultUiSettings.viewportGuides,
+      ...(config.viewportGuides ?? {}),
+    };
 
     this.group = new THREE.Group();
     this.group.name = 'ViewportGuides';
@@ -70,11 +75,25 @@ export class ViewportGuides {
     this.group.add(this.gridMesh, this.axesGroup);
     this.scene.add(this.group);
 
+    this._applyGuideFlags();
+
     this._unsubs = [
       this.eventBus.on('theme:applied', () => this.syncThemeTokens()),
-      this.eventBus.on('ui:hudVisibilityChanged', ({ hidden } = {}) => {
-        this._hudHidden = Boolean(hidden);
-        this._applyVisibility();
+      this.eventBus.on('viewport:guidesChanged', (patch = {}) => {
+        this._guideFlags = {
+          ...this._guideFlags,
+          ...patch,
+        };
+        this._applyGuideFlags();
+      }),
+      this.eventBus.on('config:loaded', ({ fileName, data } = {}) => {
+        if (fileName === 'uiSettings.json' && data?.viewportGuides) {
+          this._guideFlags = {
+            ...this._guideFlags,
+            ...data.viewportGuides,
+          };
+          this._applyGuideFlags();
+        }
       }),
       this.eventBus.on('guides:setVisible', ({ visible } = {}) => {
         if (typeof visible === 'boolean') {
@@ -113,7 +132,14 @@ export class ViewportGuides {
   }
 
   _applyVisibility() {
-    this.group.visible = this.visible && !this._hudHidden;
+    this.group.visible = this.visible;
+  }
+
+  _applyGuideFlags() {
+    if (this.gridMesh) this.gridMesh.visible = Boolean(this._guideFlags.grid);
+    if (this.axisXLine) this.axisXLine.visible = Boolean(this._guideFlags.axisX);
+    if (this.axisYLine) this.axisYLine.visible = Boolean(this._guideFlags.axisY);
+    if (this.axisZLine) this.axisZLine.visible = Boolean(this._guideFlags.axisZ);
   }
 
   _createInfiniteGridPlane() {
@@ -254,6 +280,10 @@ export class ViewportGuides {
       opacity,
       'WorldAxisZ'
     );
+
+    this.axisXLine = xAxis.line;
+    this.axisYLine = yAxis.line;
+    this.axisZLine = zAxis.line;
 
     this._axisMaterials = { x: xAxis.mat, y: yAxis.mat, z: zAxis.mat };
     this._axisGeometries = [xAxis.geo, yAxis.geo, zAxis.geo];

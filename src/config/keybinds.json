@@ -32,8 +32,10 @@
   "tool.measure": ["KeyM"],
   "tool.sectionCut": ["KeyX"],
   "tool.cancel": ["Escape"],
+
+  "ui.pie.panels": ["Tab"],
+  "ui.pie.camera": ["Backquote"],
+
   "ui.toggleHud": ["KeyH"],
-  "ui.toggleContentBrowser": ["ShiftLeft+Space", "ShiftRight+Space"],
-  "ui.toggleSettings": ["Backslash"],
-  "ui.toggleStats": ["BracketRight"]
+  "ui.toggleContentBrowser": ["ShiftLeft+Space", "ShiftRight+Space"]
 }

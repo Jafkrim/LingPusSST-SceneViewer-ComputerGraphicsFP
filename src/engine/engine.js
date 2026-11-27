@@ -61,6 +61,14 @@ export class Engine {
     this._resizeObserver = new ResizeObserver(() => this._syncSize(true));
     this._resizeObserver.observe(this.canvas);
 
+    this.eventBus.on('ui:viewportLayoutChanged', () => {
+      this._syncSize(true);
+    });
+
+    this.eventBus.on('ui:scaleChanged', () => {
+      this._syncSize(true);
+    });
+
     this._initConfigPersistence();
 
     this.eventBus.on('settings:graphicsChanged', (settings = {}) => {

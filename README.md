@@ -73,6 +73,7 @@ HUD components in `src/ui/panels/` and viewport guides in `src/rendering/` must 
 | | `--bg-input` | Text fields, numeric inputs, dropdowns, search bars, and sliders | `#383838` | `#ffffff` |
 | | `--bg-hover` | Hover state for buttons, list rows, cards, and tree items | `#474747` | `#dbeafe` |
 | | `--bg-overlay` | Dimmed backdrop behind modals and theme/scene dialogs | `rgba(0, 0, 0, 0.55)` | `rgba(15, 23, 42, 0.35)` |
+| | `--bg-modal-backdrop` | Dimmed backdrop behind the centered Settings modal dialog | `rgba(0, 0, 0, 0.68)` | `rgba(15, 23, 42, 0.45)` |
 | **Borders** | `--border-subtle` | Panel outer frames and section dividers | `#181818` | `#cbd5e1` |
 | | `--border-widget` | Control borders for inputs, buttons, toggles, and selects | `#444444` | `#94a3b8` |
 | **Text** | `--text-primary` | Main labels, active values, and headings | `#e6e6e6` | `#0f172a` |
@@ -123,6 +124,7 @@ Custom themes use a declarative **JSON** schema so external palettes can be vali
     "--bg-input": "#383838",
     "--bg-hover": "#474747",
     "--bg-overlay": "rgba(0, 0, 0, 0.55)",
+    "--bg-modal-backdrop": "rgba(0, 0, 0, 0.68)",
     "--border-subtle": "#181818",
     "--border-widget": "#444444",
     "--text-primary": "#e6e6e6",
@@ -162,7 +164,7 @@ Custom themes use a declarative **JSON** schema so external palettes can be vali
 src/config/
 ├── cameraSettings.json   # Per-mode speeds, Sprint/Alt multipliers, FOV/distance limits, drone inertia/tilt, and roll recovery.
 ├── keybinds.json         # Default action-to-input mappings loaded by InputManager and resettable in Settings.
-└── uiSettings.json       # Default UI preferences, panel visibility, and Content Browser category/filter rules.
+└── uiSettings.json       # Default UI scale, animations, pie menus, editor dock dimensions, viewport guides, and Content Browser rules.
 ```
 
 #### Core Engine (`src/engine/`)
@@ -181,7 +183,7 @@ src/engine/
 src/pawn/
 ├── controllers/                # Swappable camera navigation modes driven by cameraSettings.json
 │   ├── baseController.js       # Shared controller lifecycle and runtime settings:cameraChanged patch handler.
-│   ├── droneController.js      # Quadcopter physics with local-body rotor thrust, banking tilt, and inertia damping.
+│   ├── droneController.js      # Quadcopter physics with 3D aim-aligned thrust, motor spool-up lag, rotational inertia, and yaw-turn banking.
 │   ├── surveyorController.js   # RMB-hold Fly mode and RMB-up Alt-modified Orbit/Pan/Zoom.
 │   └── walkController.js       # First-person gravity movement.
 └── pawnManager.js              # Owns the active camera, switches controllers, and updates active navigation.
@@ -246,17 +248,23 @@ src/tools/
 DOM overlay panels decoupled from WebGL rendering logic and scene state:
 ```text
 src/ui/
-├── panels/                      # Modular HUD control panels
-│   ├── contentBrowserPanel.js   # Content drawer with auto-compacting hierarchy, category filters, relevance search, and marquee multi-select.
-│   ├── inspectorPanel.js        # Edits transforms, material properties, and mesh stats for the selected object.
-│   ├── renderPanel.js           # Controls render styles, time of day, render passes, and scene export actions.
-│   ├── settingsPanel.js         # Manages graphics presets, post-processing toggles, and keybind settings.
-│   └── statsPanel.js            # Displays real-time FPS, frame time, draw calls, triangles, GPU info, and GLSL versions.
-├── themes/                      # Built-in theme presets and runtime JSON theme manager
-│   ├── builtInDark.json         # Built-in dark CSS token preset.
-│   ├── builtInLight.json        # Built-in light CSS token preset.
-│   └── themeManager.js          # Discovers, switches, installs, and uninstalls JSON themes via CSS variables.
-└── uiManager.js                 # Mounts HUD panels, initializes ThemeManager, and bridges UI actions via eventBus.
+├── panels/                           # Modular HUD control panels
+│   ├── renderSections/               # Modular sub-sections mounted inside RenderPanel
+│   │   └── viewportGuidesSection.js  # Toggles viewport grid and world XYZ axes visibility.
+│   ├── contentBrowserPanel.js        # Content drawer with auto-compacting hierarchy, category filters, relevance search, and marquee multi-select.
+│   ├── editorPanel.js                # Docked right-side panel hosting the Hierarchy tree and tabbed Inspector / Render panes.
+│   ├── hierarchyPanel.js             # Scene outliner tree displaying active scene entities and selection state.
+│   ├── inspectorPanel.js             # Edits transforms, material properties, and mesh stats for the selected object.
+│   ├── pieMenuPanel.js               # Config-driven radial pie menus (Tab for panels, ` for camera projection).
+│   ├── renderPanel.js                # Hosts modular render sections (viewport guides, render styles, lighting, post-processing).
+│   ├── settingsPanel.js              # Centered modal managing UI theme, UI scale (80%–160%), camera settings, and keybinds.
+│   ├── statsPanel.js                 # Displays real-time FPS, frame time, draw calls, triangles, GPU info, and GLSL versions.
+│   └── viewportGizmoPanel.js         # Non-interactive top-right 3D axis orientation indicator.
+├── themes/                           # Built-in theme presets and runtime JSON theme manager
+│   ├── builtInDark.json              # Built-in dark CSS token preset.
+│   ├── builtInLight.json             # Built-in light CSS token preset.
+│   └── themeManager.js               # Discovers, switches, installs, and uninstalls JSON themes via CSS variables.
+└── uiManager.js                      # Mounts HUD panels, initializes ThemeManager, enforces default refresh layout, and bridges events.
 ```
 
 #### Shared Utilities (`src/utils/`)
@@ -318,32 +326,32 @@ All camera controllers, viewport tools, and UI panels query **logical action IDs
 | | `tool.measure` | `M` (`KeyM`) | Toggles two-point surface distance tool (`measurementTool.js`). |
 | | `tool.sectionCut` | `X` (`KeyX`) | Toggles interactive clipping plane (`sectionCutTool.js`, **Surveyor** mode only). |
 | | `tool.cancel` | `Esc` (`Escape`) | Releases cursor lock in **Drone**/**Walk**, or clears selection/target and active tool in **Surveyor**. |
-| **UI & Panels** | `ui.toggleHud` | `H` (`KeyH`) | Toggles Game Mode (hides/shows all HUD panels and viewport guides). |
+| **UI & Panels** | `ui.pie.panels` | `Tab` (`Tab`) | Opens radial pie menu to toggle **Statistics**, **Gizmo**, **Editor Panel**, and **Settings**. |
+| | `ui.pie.camera` | `` ` `` (`Backquote`) | Opens radial pie menu to switch camera projection (**Perspective** / **Orthographic**). |
+| | `ui.toggleHud` | `H` (`KeyH`) | Toggles Game Mode (hides/shows all HUD panels and viewport guides). |
 | | `ui.toggleContentBrowser` | `Shift + Space` | Toggles Content Browser drawer (forces Surveyor mode on open; closes on viewport LMB/RMB click). |
-| | `ui.toggleSettings` | `\` (`Backslash`) | Toggles Settings panel (camera settings, keybinds, UI theme, view mode, font scale). |
-| | `ui.toggleStats` | `]` (`BracketRight`) | Toggles real-time FPS / GPU performance overlay. |
 
 ## Development Progress
 
 ### Application Source Code (`src/`)
-**Overall Progress:** `0 / 61` (**0.00%**)
+**Overall Progress:** `11 / 64` (**17.18%**)
 
 | Module | Completed | Total | Progress |
 | :--- | :---: | :---: | :---: |
-| `src/config/` | 0 | 3 | **0.00%** |
+| `src/config/` | 1 | 3 | **33.33%** |
 | `src/engine/` | 0 | 5 | **0.00%** |
-| `src/pawn/` | 0 | 5 | **0.00%** |
-| `src/rendering/` | 0 | 24 | **0.00%** |
-| `src/root/` | 0 | 3 | **0.00%** |
+| `src/pawn/` | 5 | 5 | **100.00%** |
+| `src/rendering/` | 1 | 24 | **4.16%** |
+| `src/root/` | 1  | 3 | **33.33%** |
 | `src/tools/` | 0 | 4 | **0.00%** |
-| `src/ui/` | 0 | 11 | **0.00%** |
+| `src/ui/` | 3 | 14 | **21.42%** |
 | `src/utils/` | 0 | 3 | **0.00%** |
 | `src/world/` | 0 | 3 | **0.00%** |
 
 #### File Implementation & Task Assignment
 | File Path | Assigned NRP | Status |
 | :--- | :---: | :---: |
-| `src/config/cameraSettings.json` | `5025241040` | WIP |
+| `src/config/cameraSettings.json` | `5025241040` | Done |
 | `src/config/keybinds.json` | `5025241040` | WIP |
 | `src/config/uiSettings.json` | `5025241040` | WIP |
 | `src/engine/assetResolver.js` | `5025241040` | WIP |
@@ -351,11 +359,11 @@ All camera controllers, viewport tools, and UI panels query **logical action IDs
 | `src/engine/eventBus.js` | `5025241040` | WIP |
 | `src/engine/inputManager.js` | `5025241040` | WIP |
 | `src/engine/resourceTracker.js` | `TBD` | Pending |
-| `src/pawn/controllers/baseController.js` | `5025241040` | WIP |
-| `src/pawn/controllers/droneController.js` | `5025241040` | WIP |
-| `src/pawn/controllers/surveyorController.js` | `5025241040` | WIP |
-| `src/pawn/controllers/walkController.js` | `5025241040` | WIP |
-| `src/pawn/pawnManager.js` | `5025241040` | WIP |
+| `src/pawn/controllers/baseController.js` | `5025241040` | Done |
+| `src/pawn/controllers/droneController.js` | `5025241040` | Done |
+| `src/pawn/controllers/surveyorController.js` | `5025241040` | Done |
+| `src/pawn/controllers/walkController.js` | `5025241040` | Done |
+| `src/pawn/pawnManager.js` | `5025241040` | Done |
 | `src/rendering/lighting/globalIlluminationSystem.js` | `TBD` | Pending |
 | `src/rendering/lighting/lightingRig.js` | `5025241040` | WIP |
 | `src/rendering/lighting/reflectionProbeSystem.js` | `TBD` | Pending |
@@ -379,29 +387,34 @@ All camera controllers, viewport tools, and UI panels query **logical action IDs
 | `src/rendering/weather/surfaceWeatherPatch.js` | `TBD` | Pending |
 | `src/rendering/weather/weatherSystem.js` | `TBD` | Pending |
 | `src/rendering/renderPipeline.js` | `5025241040` | WIP |
-| `src/rendering/viewportGuides.js` | `5025241040` | WIP |
-| `src/root/index.html` | `5025241040` | WIP |
+| `src/rendering/viewportGuides.js` | `5025241040` | Done |
+| `src/root/index.html` | `5025241040` | Done |
 | `src/root/main.js` | `5025241040` | WIP |
 | `src/root/style.css` | `5025241040` | WIP |
 | `src/tools/measurementTool.js` | `TBD` | Pending |
 | `src/tools/placementTool.js` | `TBD` | Pending |
 | `src/tools/sectionCutTool.js` | `TBD` | Pending |
 | `src/tools/selectionTool.js` | `TBD` | Pending |
+| `src/ui/panels/renderSections/viewportGuidesSection.js` | `5025241040` | WIP |
 | `src/ui/panels/contentBrowserPanel.js` | `5025241040` | WIP |
-| `src/ui/panels/inspectorPanel.js` | `TBD` | Pending |
-| `src/ui/panels/renderPanel.js` | `TBD` | Pending |
+| `src/ui/panels/editorPanel.js` | `5025241040` | WIP |
+| `src/ui/panels/hierarchyPanel.js` | `5025241040` | WIP |
+| `src/ui/panels/inspectorPanel.js` | `5025241040` | WIP |
+| `src/ui/panels/pieMenuPanel.js` | `5025241040` | WIP |
+| `src/ui/panels/renderPanel.js` | `5025241040` | WIP |
 | `src/ui/panels/settingsPanel.js` | `5025241040` | WIP |
 | `src/ui/panels/statsPanel.js` | `5025241040` | WIP |
-| `src/ui/themes/builtInDark.json` | `5025241040` | WIP |
-| `src/ui/themes/builtInLight.json` | `5025241040` | WIP |
+| `src/ui/panels/viewportGizmoPanel.js` | `5025241040` | Done |
+| `src/ui/themes/builtInDark.json` | `5025241040` | Done |
+| `src/ui/themes/builtInLight.json` | `5025241040` | Done |
 | `src/ui/themes/themeManager.js` | `5025241040` | WIP |
 | `src/ui/uiManager.js` | `5025241040` | WIP |
 | `src/utils/disposal.js` | `TBD` | Pending |
 | `src/utils/math.js` | `TBD` | Pending |
 | `src/utils/noise.js` | `TBD` | Pending |
 | `src/world/sceneManager.js` | `5025241040` | WIP |
-| `src/world/sceneSerializer.js` | `TBD` | Pending |
-| `src/world/spatialIndex.js` | `TBD` | Pending |
+| `src/world/sceneSerializer.js` | `5025241040` | WIP |
+| `src/world/spatialIndex.js` | `5025241040` | WIP |
 
 ### Engine Content (`public/engineContent/`)
 **Overall Progress:** `0 / 4` (**0.00%**)

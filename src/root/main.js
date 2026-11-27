@@ -130,19 +130,40 @@ function main() {
   renderPipeline.registerStyle('pr', new PRStyle({ pipeline: renderPipeline, eventBus }));
   renderPipeline.setStyle('pr');
 
-  engine.register(
+  const uiManager = engine.register(
     'uiManager',
     new UIManager({
       root: hudRoot,
       eventBus,
       renderPipeline,
       assetResolver,
+      sceneManager,
+      pawnManager,
       config: { ui: initialUiSettings },
     }),
     110
   );
 
-  // UE5 Content Drawer behavior: force Surveyor mode on open; close when clicking LMB/RMB on viewport
+  // Sync viewport dimensions and redraw immediately during panel slide animations
+  eventBus.on('ui:viewportLayoutChanged', () => {
+    const width = Math.max(1, Math.round(canvas.clientWidth || window.innerWidth));
+    const height = Math.max(1, Math.round(canvas.clientHeight || window.innerHeight));
+
+    if (typeof engine.resize === 'function') {
+      engine.resize(width, height);
+    } else {
+      pawnManager.setAspect?.(width / height);
+      renderPipeline.resize?.(width, height);
+    }
+
+    renderPipeline.update?.(0, {
+      engine,
+      scene: sceneManager.scene,
+      camera: pawnManager.camera,
+    });
+  });
+
+  // Force Surveyor mode on open; close when clicking LMB/RMB on viewport
   eventBus.on('ui:contentBrowserVisibilityChanged', ({ visible } = {}) => {
     if (visible && pawnManager.activeMode !== 'surveyor') {
       pawnManager.setMode('surveyor');
@@ -150,6 +171,7 @@ function main() {
   });
 
   eventBus.on('input:pointerdown', ({ button } = {}) => {
+    if (uiManager.settingsPanel?.visible) return;
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
@@ -160,6 +182,7 @@ function main() {
 
   // Route double-clicked Content Browser items to scene/environment loaders
   eventBus.on('content:activateAsset', async (item) => {
+    if (uiManager.settingsPanel?.visible) return;
     if (!item?.logicalPath) return;
     try {
       if (item.category === 'models' || item.category === 'prefabs') {
@@ -167,7 +190,7 @@ function main() {
       } else if (item.category === 'scenes') {
         await sceneSerializer.loadScene(item.logicalPath);
       } else if (item.category === 'environments') {
-        eventBus.emit('envir  onment:loadRequest', { logicalPath: item.logicalPath });
+        eventBus.emit('environment:loadRequest', { logicalPath: item.logicalPath });
       }
     } catch (err) {
       console.error('Failed to activate content asset:', err);
@@ -187,6 +210,8 @@ function main() {
   });
 
   eventBus.on('input:action:down', ({ action } = {}) => {
+    if (uiManager.settingsPanel?.visible) return;
+
     if (action in CAMERA_MODE_ACTIONS) {
       pawnManager.setMode(CAMERA_MODE_ACTIONS[action]);
       return;
@@ -201,7 +226,14 @@ function main() {
     console.warn('Content manifest discovery failed:', err);
   });
 
-  window.addEventListener('beforeunload', () => engine.dispose(), { once: true });
+  const onBeforeUnload = (e) => {
+    e.preventDefault();
+    e.returnValue = '';
+  };
+
+  window.addEventListener('beforeunload', onBeforeUnload);
+  window.addEventListener('unload', () => engine.dispose(), { once: true });
+
   engine.start();
 }
 

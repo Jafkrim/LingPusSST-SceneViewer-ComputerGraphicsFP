@@ -34,9 +34,12 @@ export class DroneController extends BaseController {
     this._pitch = 0;
     this._targetYaw = 0;
     this._targetPitch = 0;
+    this._yawVel = 0;
+    this._pitchVel = 0;
     this._tiltPitch = 0;
     this._tiltRoll = 0;
     this._velocity = new THREE.Vector3();
+    this._currentThrust = new THREE.Vector3();
     this._lookHeld = false;
     this._unsubs = [];
 
@@ -50,6 +53,8 @@ export class DroneController extends BaseController {
     this._pitch = euler.x;
     this._targetYaw = euler.y;
     this._targetPitch = euler.x;
+    this._yawVel = 0;
+    this._pitchVel = 0;
     this._tiltPitch = 0;
     this._tiltRoll = 0;
   }
@@ -108,6 +113,7 @@ export class DroneController extends BaseController {
     super.activate();
     this._syncAngles();
     this._velocity.set(0, 0, 0);
+    this._currentThrust.set(0, 0, 0);
     this._lookHeld = false;
     this.inputManager.requestPointerLock();
     this._syncCursorState();
@@ -122,18 +128,20 @@ export class DroneController extends BaseController {
 
   update(dt) {
     if (!this.active) return;
+    const clampedDt = Math.min(dt, 0.05);
 
-    this._updateFovZoom(dt);
+    this._updateFovZoom(clampedDt);
 
     const a = this.config.actions;
     const locked = Boolean(this.inputManager.isPointerLocked);
     const lookActive = locked || this._lookHeld || Boolean(this.inputManager.isActionActive(a.look));
 
+    const minPitch = THREE.MathUtils.degToRad(this.config.minPitchDeg);
+    const maxPitch = THREE.MathUtils.degToRad(this.config.maxPitchDeg);
+
     if (lookActive) {
       this.inputManager.setCursorHidden(true);
       const { moveX = 0, moveY = 0 } = this.inputManager.delta ?? {};
-      const minPitch = THREE.MathUtils.degToRad(this.config.minPitchDeg);
-      const maxPitch = THREE.MathUtils.degToRad(this.config.maxPitchDeg);
       this._targetYaw -= moveX * this.config.lookSpeed;
       this._targetPitch = THREE.MathUtils.clamp(
         this._targetPitch - moveY * this.config.lookSpeed,
@@ -144,14 +152,24 @@ export class DroneController extends BaseController {
       this.inputManager.setCursorHidden(locked);
     }
 
-    const rotBlend = 1 - Math.exp(-this.config.angularDamping * dt);
-    this._yaw += (this._targetYaw - this._yaw) * rotBlend;
-    this._pitch += (this._targetPitch - this._pitch) * rotBlend;
+    // Second-order rotational inertia (motor torque lag + angular damping)
+    const damping = Math.max(1, Number(this.config.angularDamping ?? 10));
+    const stiffness = damping * damping * 0.35;
+    const yawAcc = (this._targetYaw - this._yaw) * stiffness - this._yawVel * damping;
+    const pitchAcc = (this._targetPitch - this._pitch) * stiffness - this._pitchVel * damping;
 
-    const bodyQuat = this.camera.quaternion;
-    const localForward = new THREE.Vector3(0, 0, -1).applyQuaternion(bodyQuat).normalize();
-    const localRight = new THREE.Vector3(1, 0, 0).applyQuaternion(bodyQuat).normalize();
-    const localUp = new THREE.Vector3(0, 1, 0).applyQuaternion(bodyQuat).normalize();
+    this._yawVel += yawAcc * clampedDt;
+    this._pitchVel += pitchAcc * clampedDt;
+    this._yaw += this._yawVel * clampedDt;
+    this._pitch = THREE.MathUtils.clamp(this._pitch + this._pitchVel * clampedDt, minPitch, maxPitch);
+
+    // Full 3D aim basis (yaw + pitch, excluding cosmetic banking tilt so thrust doesn't self-oscillate)
+    const aimQuat = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(this._pitch, this._yaw, 0, 'YXZ')
+    );
+    const forwardDir = new THREE.Vector3(0, 0, -1).applyQuaternion(aimQuat).normalize();
+    const rightDir = new THREE.Vector3(1, 0, 0).applyQuaternion(aimQuat).normalize();
+    const upDir = new THREE.Vector3(0, 1, 0).applyQuaternion(aimQuat).normalize();
 
     let forwardInput = 0;
     let strafeInput = 0;
@@ -174,38 +192,43 @@ export class DroneController extends BaseController {
     const maxHoriz = this.config.maxHorizontalSpeed * speedScale;
     const maxVert = this.config.maxVerticalSpeed * speedScale;
 
-    const thrust = new THREE.Vector3()
-      .addScaledVector(localForward, planarInput.y * this.config.horizontalAccel * speedScale)
-      .addScaledVector(localRight, planarInput.x * this.config.horizontalAccel * speedScale)
-      .addScaledVector(localUp, verticalInput * this.config.verticalAccel * speedScale);
+    // Motor spool-up lag along the 3D camera aim vectors
+    const desiredThrust = new THREE.Vector3()
+      .addScaledVector(forwardDir, planarInput.y * this.config.horizontalAccel * speedScale)
+      .addScaledVector(rightDir, planarInput.x * this.config.horizontalAccel * speedScale)
+      .addScaledVector(upDir, verticalInput * this.config.verticalAccel * speedScale);
 
-    this._velocity.addScaledVector(thrust, dt);
+    const motorResponse = 1 - Math.exp(-Math.max(4, Number(this.config.tiltResponsiveness ?? 8) * 1.4) * clampedDt);
+    this._currentThrust.lerp(desiredThrust, motorResponse);
+    this._velocity.addScaledVector(this._currentThrust, clampedDt);
 
-    const upSpeed = this._velocity.dot(localUp);
-    const upVel = localUp.clone().multiplyScalar(upSpeed);
+    const upSpeed = this._velocity.dot(upDir);
+    const upVel = upDir.clone().multiplyScalar(upSpeed);
     const planarVel = this._velocity.clone().sub(upVel);
 
-    planarVel.multiplyScalar(Math.exp(-this.config.horizontalDrag * dt));
-    upVel.multiplyScalar(Math.exp(-this.config.verticalDrag * dt));
+    planarVel.multiplyScalar(Math.exp(-this.config.horizontalDrag * clampedDt));
+    upVel.multiplyScalar(Math.exp(-this.config.verticalDrag * clampedDt));
 
     if (planarVel.length() > maxHoriz) {
       planarVel.setLength(maxHoriz);
     }
-    const clampedUpSpeed = THREE.MathUtils.clamp(upVel.dot(localUp), -maxVert, maxVert);
-    upVel.copy(localUp).multiplyScalar(clampedUpSpeed);
+    const clampedUpSpeed = THREE.MathUtils.clamp(upVel.dot(upDir), -maxVert, maxVert);
+    upVel.copy(upDir).multiplyScalar(clampedUpSpeed);
 
     this._velocity.copy(planarVel).add(upVel);
 
-    const localForwardSpeed = planarVel.dot(localForward);
-    const localRightSpeed = planarVel.dot(localRight);
+    // Quadcopter pitch/roll attitude from translational thrust + subtle yaw-turn bank
+    const localForwardSpeed = planarVel.dot(forwardDir);
+    const localRightSpeed = planarVel.dot(rightDir);
     const maxTiltRad = THREE.MathUtils.degToRad(this.config.maxTiltDeg);
 
     const desiredTiltPitch =
       -THREE.MathUtils.clamp(localForwardSpeed / Math.max(maxHoriz, 0.01), -1, 1) * maxTiltRad;
+    const yawBank = THREE.MathUtils.clamp(this._yawVel * 0.08, -0.35, 0.35) * maxTiltRad;
     const desiredTiltRoll =
-      -THREE.MathUtils.clamp(localRightSpeed / Math.max(maxHoriz, 0.01), -1, 1) * maxTiltRad;
+      -THREE.MathUtils.clamp(localRightSpeed / Math.max(maxHoriz, 0.01), -1, 1) * maxTiltRad + yawBank;
 
-    const tiltBlend = 1 - Math.exp(-this.config.tiltResponsiveness * dt);
+    const tiltBlend = 1 - Math.exp(-this.config.tiltResponsiveness * clampedDt);
     this._tiltPitch += (desiredTiltPitch - this._tiltPitch) * tiltBlend;
     this._tiltRoll += (desiredTiltRoll - this._tiltRoll) * tiltBlend;
 
@@ -213,7 +236,7 @@ export class DroneController extends BaseController {
       new THREE.Euler(this._pitch + this._tiltPitch, this._yaw, this._tiltRoll, 'YXZ')
     );
 
-    const nextPos = this.camera.position.clone().addScaledVector(this._velocity, dt);
+    const nextPos = this.camera.position.clone().addScaledVector(this._velocity, clampedDt);
     if (this.spatialIndex?.resolveSphere?.(nextPos, this.config.collisionRadius)) {
       this._velocity.multiplyScalar(this.config.collisionBounce);
     }

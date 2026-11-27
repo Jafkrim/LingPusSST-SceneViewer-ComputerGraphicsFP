@@ -223,9 +223,9 @@ export class StatsPanel {
     this._renderBody(this.renderPipeline?.getTelemetry?.() ?? {});
   }
 
-  _line(value, label, muted = false) {
+  _line(label, value, muted = false) {
     const cls = muted ? 'hud-stats__line hud-stats__line--muted' : 'hud-stats__line';
-    return `<div class="${cls}"><strong class="hud-stats__value">${value}</strong> <span class="hud-stats__label">${label}</span></div>`;
+    return `<div class="${cls}"><span class="hud-stats__label">${label}</span> <strong class="hud-stats__value">${value}</strong></div>`;
   }
 
   _divider() {
@@ -239,15 +239,15 @@ export class StatsPanel {
       this._gpuTimer.lastGpuMs !== null ? `${this._gpuTimer.lastGpuMs.toFixed(2)} ms` : 'N/A';
 
     this.body.innerHTML = [
-      this._line(this._sysInfo.glsl, 'GLSL', true),
-      this._line(this._sysInfo.backend, 'Graphics API', true),
-      this._line(this._sysInfo.gpu, 'GPU', true),
+      this._line('GLSL', this._sysInfo.glsl, true),
+      this._line('Graphics API', this._sysInfo.backend, true),
+      this._line('GPU', this._sysInfo.gpu, true),
       this._divider(),
-      this._line(this._fps, 'FPS'),
-      this._line(`${this._frameMs} ms`, 'Frame Time'),
-      this._line(gpuTimeText, 'GPU Time'),
-      this._line(triangles, 'Triangles'),
-      this._line(calls, 'Draw Calls'),
+      this._line('FPS', this._fps),
+      this._line('Frame Time', `${this._frameMs} ms`),
+      this._line('GPU Time', gpuTimeText),
+      this._line('Triangles', triangles),
+      this._line('Draw Calls', calls),
     ].join('');
   }
 

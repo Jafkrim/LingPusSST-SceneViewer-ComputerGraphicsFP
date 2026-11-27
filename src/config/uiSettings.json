@@ -1,17 +1,121 @@
 {
   "storageKey": "lingpus_sst_ui_settings_v1",
-  "theme": "builtInDark",
+  "theme": "builtInLight",
   "viewMode": 1,
   "hudHidden": false,
   "uiScale": {
-    "value": 120,
+    "value": 100,
     "min": 80,
-    "max": 160
+    "max": 160,
+    "step": 5
+  },
+  "animations": {
+    "enabled": true,
+    "durationMs": 160,
+    "fade": true,
+    "slide": true,
+    "pie": true
   },
   "panels": {
-    "settingsVisible": true,
-    "statsVisible": true,
-    "contentBrowserVisible": false
+    "settingsVisible": false,
+    "statsVisible": false,
+    "contentBrowserVisible": false,
+    "editorVisible": true,
+    "viewportGizmoVisible": false
+  },
+  "settingsPanel": {
+    "title": "Settings",
+    "widthPx": 560,
+    "minHeightPx": 360,
+    "maxHeightVh": 85,
+    "closeLabel": "×",
+    "closeTitle": "Close Settings (Esc)"
+  },
+  "editorPanel": {
+    "widthPx": 300,
+    "hierarchyHeightPx": 220,
+    "hierarchyMinHeightPx": 90,
+    "hierarchyMaxHeightPx": 560,
+    "activeTab": "render"
+  },
+  "viewportGizmo": {
+    "sizePx": 84,
+    "armLengthPx": 26,
+    "labelOffsetPx": 9,
+    "lineWidthPx": 2.5
+  },
+  "pieMenu": {
+    "radiusPx": 116,
+    "verticalFactor": 0.64,
+    "deadzonePx": 22,
+    "ringRadiusPx": 18,
+    "edgePaddingPx": 16,
+    "menus": {
+      "panels": {
+        "startAngleDeg": -135,
+        "items": [
+          {
+            "id": "stats",
+            "label": "Statistics",
+            "event": "ui:togglePanel",
+            "payload": {
+              "panel": "stats"
+            }
+          },
+          {
+            "id": "viewportGizmo",
+            "label": "Gizmo",
+            "event": "ui:togglePanel",
+            "payload": {
+              "panel": "viewportGizmo"
+            }
+          },
+          {
+            "id": "editor",
+            "label": "Panel",
+            "event": "ui:togglePanel",
+            "payload": {
+              "panel": "editor"
+            }
+          },
+          {
+            "id": "settings",
+            "label": "Settings",
+            "event": "ui:togglePanel",
+            "payload": {
+              "panel": "settings"
+            }
+          }
+        ]
+      },
+      "camera": {
+        "startAngleDeg": 180,
+        "items": [
+          {
+            "id": "perspective",
+            "label": "Perspective",
+            "event": "camera:setProjection",
+            "payload": {
+              "projection": "perspective"
+            }
+          },
+          {
+            "id": "orthographic",
+            "label": "Orthographic",
+            "event": "camera:setProjection",
+            "payload": {
+              "projection": "orthographic"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "viewportGuides": {
+    "grid": true,
+    "axisX": true,
+    "axisY": true,
+    "axisZ": true
   },
   "contentBrowser": {
     "scopes": [
@@ -93,17 +197,17 @@
     ],
     "activeFilters": [
       "folder",
+      "scene",
       "prefab",
       "exr",
       "hdr",
       "glb",
       "gltf",
       "binary",
-      "texture",
-      "scene"
+      "texture"
     ],
     "hierarchyVisible": true,
-    "filtersVisible": true,
+    "filtersVisible": false,
     "searchMinChars": 1,
     "expandedNodes": []
   }
