@@ -47,8 +47,12 @@ export class ViewportGizmoPanel {
   }
 
   _getUiScale() {
+    const cssScale = parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')
+    );
+    if (Number.isFinite(cssScale) && cssScale > 0) return cssScale;
     return (Number(this.config.uiScale?.value ?? 100) || 100) / 100;
-  }
+  } 
 
   _syncThemeColors() {
     const styles = getComputedStyle(document.documentElement);
@@ -63,12 +67,17 @@ export class ViewportGizmoPanel {
 
     const cfg = this._getGizmoConfig();
     const scale = this._getUiScale();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
 
     const sizeLogical = Math.round(Number(cfg.sizePx ?? 84) * scale);
     const targetPx = Math.max(1, Math.round(sizeLogical * dpr));
 
-    if (this.canvas.width !== targetPx || this.canvas.height !== targetPx) {
+    if (
+      this.canvas.width !== targetPx ||
+      this.canvas.height !== targetPx ||
+      this._lastSizeLogical !== sizeLogical
+    ) {
+      this._lastSizeLogical = sizeLogical;
       this.canvas.width = targetPx;
       this.canvas.height = targetPx;
       this.canvas.style.width = `${sizeLogical}px`;

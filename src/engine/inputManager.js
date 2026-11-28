@@ -242,8 +242,14 @@ export class InputManager {
       return true;
     }
 
-    // Intercept any Ctrl/Alt/Meta chord over the app so browser shortcuts do not steal focus
-    if (e.ctrlKey || e.altKey || e.metaKey) {
+    // Intercept Ctrl/Alt/Shift/Meta keys and chords over the app so browser menus/selection/shortcuts never steal focus
+    if (
+      e.ctrlKey ||
+      e.altKey ||
+      e.shiftKey ||
+      e.metaKey ||
+      ['AltLeft', 'AltRight', 'ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight', 'Space'].includes(e.code)
+    ) {
       return true;
     }
 
@@ -309,10 +315,28 @@ export class InputManager {
     }, { capture: true, signal });
 
     document.addEventListener('mousedown', (e) => {
-      if ((e.button === 1 || e.button === 2) && !this._isInteractiveUI(e.target)) {
+      if (!this._isInteractiveUI(e.target)) {
         e.preventDefault();
       }
     }, { capture: true, signal });
+
+    document.addEventListener('selectstart', (e) => {
+      if (!this._isTextEntryElement(e.target)) {
+        e.preventDefault();
+      }
+    }, { capture: true, signal });
+
+    document.addEventListener('dragstart', (e) => {
+      if (!this._isInteractiveUI(e.target)) {
+        e.preventDefault();
+      }
+    }, { capture: true, signal });
+
+    for (const gestureEvt of ['gesturestart', 'gesturechange', 'gestureend']) {
+      document.addEventListener(gestureEvt, (e) => {
+        e.preventDefault();
+      }, { capture: true, passive: false, signal });
+    }
 
     window.addEventListener('keydown', (e) => {
       if (this._shouldInterceptKeyEvent(e)) {
@@ -368,9 +392,7 @@ export class InputManager {
     window.addEventListener('pointerdown', (e) => {
       if (this._isInteractiveUI(e.target) && this.buttonsDown.size === 0) return;
 
-      if (e.button === 1 || e.button === 2) {
-        e.preventDefault();
-      }
+      e.preventDefault();
 
       this._syncModifiersFromEvent(e);
       this._updatePointer(e);

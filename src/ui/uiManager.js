@@ -209,8 +209,22 @@ export class UIManager {
 
     this._panelAnimTimers = new Map();
     this._dockRaf = null;
+    this._baseDpr = window.devicePixelRatio || 1;
+    this._userUiScale = this.uiConfig.uiScale.value / 100;
 
-    this._applyUiScale(this.uiConfig.uiScale.value / 100);
+    this._onBrowserZoomResize = () => {
+      this._applyUiScale(this._userUiScale);
+      this.viewportToolbarPanel?.syncAdaptiveWidths?.();
+      this._syncDockOffsets(
+        this.uiConfig.panels.editorVisible ? 1 : 0,
+        this.uiConfig.panels.contentBrowserVisible ? 1 : 0,
+        this.uiConfig.panels.toolbarVisible ? 1 : 0
+      );
+    };
+    window.addEventListener('resize', this._onBrowserZoomResize);
+    window.visualViewport?.addEventListener('resize', this._onBrowserZoomResize);
+
+    this._applyUiScale(this._userUiScale);
     this._applyAnimationsConfig(this.uiConfig.animations);
     this._syncDockOffsets(
       this.uiConfig.panels.editorVisible ? 1 : 0,
@@ -369,12 +383,22 @@ export class UIManager {
     ];
   }
 
+  _getEffectiveUiScale() {
+    const userScale =
+      typeof this._userUiScale === 'number'
+        ? this._userUiScale
+        : (Number(this.uiConfig.uiScale?.value ?? 100) || 100) / 100;
+    const browserZoom = Math.min(5, Math.max(0.25, window.devicePixelRatio || 1));
+    document.documentElement.style.setProperty('--browser-zoom', String(browserZoom));
+    return userScale / browserZoom;
+  }
+
   _syncDockOffsets(
     editorFactor = this.uiConfig.panels.editorVisible ? 1 : 0,
     cbFactor = this.uiConfig.panels.contentBrowserVisible ? 1 : 0,
     tbFactor = this.uiConfig.panels.toolbarVisible ? 1 : 0
   ) {
-    const scale = (Number(this.uiConfig.uiScale?.value ?? 100) || 100) / 100;
+    const scale = this._getEffectiveUiScale();
     const baseEdWidth = Number(this.uiConfig.editorPanel?.widthPx ?? 300);
     const baseTbHeight = Number(this.uiConfig.viewportToolbar?.heightPx ?? 32);
     const cbHeight =
@@ -595,7 +619,8 @@ export class UIManager {
   }
 
   _applyUiScale(scale) {
-    document.documentElement.style.setProperty('--ui-scale', String(scale));
+    this._userUiScale = scale;
+    document.documentElement.style.setProperty('--ui-scale', String(this._getEffectiveUiScale()));
   }
 
   _applyHudVisibility() {
@@ -626,6 +651,8 @@ export class UIManager {
   }
 
   dispose() {
+    window.removeEventListener('resize', this._onBrowserZoomResize);
+    window.visualViewport?.removeEventListener('resize', this._onBrowserZoomResize);
     if (this._dockRaf !== null) {
       cancelAnimationFrame(this._dockRaf);
       this._dockRaf = null;

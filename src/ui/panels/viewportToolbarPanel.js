@@ -171,7 +171,7 @@ export class ViewportToolbarPanel {
       } else {
         probe.textContent = text;
       }
-      const w = Math.ceil(probe.getBoundingClientRect().width / scaleFactor);
+      const w = Number((probe.getBoundingClientRect().width / scaleFactor).toFixed(2));
       if (w > maxWidth) maxWidth = w;
     }
     probe.remove();

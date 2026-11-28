@@ -58,6 +58,8 @@
   --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
   --ui-scale: 1;
+  --browser-zoom: 1;
+  --px: max(0.5px, calc(1px / var(--browser-zoom, 1)));
   --ui-anim-duration: 160ms;
 }
 
@@ -334,7 +336,7 @@ body.is-hud-hidden #viewport {
   left: 0;
   right: var(--ed-dock-offset, 0px);
   bottom: 0;
-  height: calc(270px * var(--ui-scale, 1));
+  height: min(calc(270px * var(--ui-scale, 1)), 45vh);
   border-radius: 0;
   border-left: none;
   border-bottom: none;
@@ -692,7 +694,7 @@ body.is-hud-hidden #viewport {
   right: 0;
   bottom: 0;
   left: auto;
-  width: calc(var(--ed-width, 300px) * var(--ui-scale, 1));
+  width: min(calc(var(--ed-width, 300px) * var(--ui-scale, 1)), 45vw);
   border-radius: 0;
   border-top: none;
   border-right: none;
@@ -1445,7 +1447,7 @@ body.is-ui-animated.is-anim-slide .hud-viewport-toolbar.is-panel-hidden {
 .hud-vtb__seg-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: calc(6px * var(--ui-scale, 1));
 }
 
 .hud-vtb__seg-btn .hud-vtb__shortcut {
