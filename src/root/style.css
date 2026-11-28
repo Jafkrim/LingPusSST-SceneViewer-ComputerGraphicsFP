@@ -1351,10 +1351,13 @@ body.is-ui-animated.is-anim-slide .hud-viewport-toolbar.is-panel-hidden {
 }
 
 .hud-vtb__menu--form {
+  display: grid;
+  grid-template-columns: max-content min-content;
   width: max-content;
-  min-width: calc(200px * var(--ui-scale, 1));
+  min-width: 100%;
   padding: calc(8px * var(--ui-scale, 1));
-  gap: calc(8px * var(--ui-scale, 1));
+  column-gap: calc(12px * var(--ui-scale, 1));
+  row-gap: calc(8px * var(--ui-scale, 1));
 }
 
 .hud-vtb__menu-item {
@@ -1395,11 +1398,23 @@ body.is-ui-animated.is-anim-slide .hud-viewport-toolbar.is-panel-hidden {
 }
 
 .hud-vtb__form-row {
-  display: flex;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
-  justify-content: space-between;
-  gap: calc(8px * var(--ui-scale, 1));
   color: var(--text-secondary);
+}
+
+.hud-vtb__form-row > :first-child {
+  justify-self: start;
+  white-space: nowrap;
+}
+
+.hud-vtb__form-row > :last-child {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  justify-self: stretch;
 }
 
 .hud-vtb__form-col {
@@ -1409,7 +1424,8 @@ body.is-ui-animated.is-anim-slide .hud-viewport-toolbar.is-panel-hidden {
 }
 
 .hud-vtb__num-input {
-  width: calc(74px * var(--ui-scale, 1));
+  width: 100%;
+  min-width: 0;
   padding: calc(2px * var(--ui-scale, 1)) calc(6px * var(--ui-scale, 1));
   background: var(--bg-input);
   border: 1px solid var(--border-widget);

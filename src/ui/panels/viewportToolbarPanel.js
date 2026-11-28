@@ -110,7 +110,7 @@ export class ViewportToolbarPanel {
     const next = this._openMenu === id ? null : id;
     this._openMenu = next;
     for (const [key, menuEl] of this._menus.entries()) {
-      menuEl.style.display = key === next ? 'flex' : 'none';
+      menuEl.style.display = key === next ? '' : 'none';
     }
   }
 
