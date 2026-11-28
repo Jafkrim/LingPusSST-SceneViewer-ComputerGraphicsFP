@@ -37,9 +37,11 @@ export class ContentBrowserPanel {
     this.config.contentBrowser.previewFormats = { ...this.previewFormats };
     this.searchMinChars = cbCfg.searchMinChars;
 
+    const initialScale = (Number(this.config.uiScale?.value ?? 100) || 100) / 100;
     this._previewRenderer = new AssetPreviewRenderer({
       assetResolver: this.assetResolver,
       resolution: cbCfg.previewResolution ?? 160,
+      uiScale: initialScale,
     });
 
     this._categoryOrder = new Map(this.categories.map((c, idx) => [c.id, idx]));
@@ -235,6 +237,21 @@ export class ContentBrowserPanel {
         if (dirty) {
           this._renderGrid();
         }
+      }),
+      this.eventBus?.on?.('ui:scaleChanged', ({ percent, scale } = {}) => {
+        const nextScale =
+          typeof scale === 'number' && !Number.isNaN(scale)
+            ? scale
+            : typeof percent === 'number' && !Number.isNaN(percent)
+              ? percent / 100
+              : null;
+        if (nextScale === null) return;
+        clearTimeout(this._scaleDebounceTimer);
+        this._scaleDebounceTimer = setTimeout(() => {
+          if (this._previewRenderer?.setUiScale?.(nextScale)) {
+            this._renderGrid();
+          }
+        }, 120);
       }),
     ].filter(Boolean);
 
@@ -944,6 +961,10 @@ export class ContentBrowserPanel {
   }
 
   dispose() {
+    if (this._scaleDebounceTimer) {
+      clearTimeout(this._scaleDebounceTimer);
+      this._scaleDebounceTimer = null;
+    }
     for (const u of this._unsubs) u?.();
     this._unsubs = [];
     this._previewRenderer?.dispose?.();

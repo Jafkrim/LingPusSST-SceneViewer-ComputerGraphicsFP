@@ -156,15 +156,41 @@ export class PawnManager {
       this.setMode('surveyor');
     }
 
-    const pivot = this._activeController?.target?.clone() ?? new THREE.Vector3(0, 0, 0);
-    const dist = Math.max(2, this.camera.position.distanceTo(pivot));
+    const ctrl = this._activeController;
+    const hasSelected =
+      Array.isArray(ctrl?._selectedObjects) && ctrl._selectedObjects.length > 0;
+    const pivot = hasSelected
+      ? (ctrl._resolveSelectionCentroid?.() ?? ctrl.target)
+      : null;
 
-    this.camera.position.copy(pivot).addScaledVector(dir, dist);
     this.camera.up.set(0, 1, 0);
-    this.camera.lookAt(pivot);
 
-    if (this._activeController?._syncAngles) {
-      this._activeController._syncAngles();
+    if (pivot) {
+      // Jika ada objek terpilih: orbit ke lokasi gizmo/centroid dengan mempertahankan jarak saat ini
+      ctrl.setTarget?.(pivot);
+      const dist = Math.max(
+        ctrl?.config?.minDistance ?? 0.5,
+        this.camera.position.distanceTo(pivot)
+      );
+      this.camera.position.copy(pivot).addScaledVector(dir, dist);
+      this.camera.lookAt(pivot);
+    } else {
+      // Jika tidak ada objek terpilih: pertahankan posisi kamera saat ini, hanya putar arah pandang
+      const lookTarget = this.camera.position.clone().sub(dir);
+      this.camera.lookAt(lookTarget);
+    }
+
+    // Sinkronkan kedua kamera agar posisi dan rotasi selalu selaras saat proyeksi diganti manual
+    this.perspectiveCamera.position.copy(this.camera.position);
+    this.perspectiveCamera.quaternion.copy(this.camera.quaternion);
+    this.perspectiveCamera.up.copy(this.camera.up);
+
+    this.orthographicCamera.position.copy(this.camera.position);
+    this.orthographicCamera.quaternion.copy(this.camera.quaternion);
+    this.orthographicCamera.up.copy(this.camera.up);
+
+    if (ctrl?._syncAngles) {
+      ctrl._syncAngles();
     }
   }
 

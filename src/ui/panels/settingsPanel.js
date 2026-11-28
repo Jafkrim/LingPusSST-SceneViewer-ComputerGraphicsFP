@@ -183,9 +183,6 @@ export class SettingsPanel {
 
     this.backdropEl.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
-      if (e.target === this.backdropEl) {
-        this.eventBus.emit('ui:closeSettings');
-      }
     });
 
     this._onWindowKeyDown = (e) => {

@@ -140,7 +140,8 @@ body.is-hud-hidden #viewport {
   top: auto;
   left: auto;
   width: min(calc(var(--settings-width, 560px) * var(--ui-scale, 1)), 90vw);
-  min-height: calc(var(--settings-min-height, 360px) * var(--ui-scale, 1));
+  height: auto;
+  min-height: 0;
   max-height: var(--settings-max-height, 85vh);
   display: flex;
   flex-direction: column;
@@ -1433,5 +1434,10 @@ body.is-ui-animated.is-anim-slide .hud-viewport-toolbar.is-panel-hidden {
 
 .hud-vtb__seg-btn .hud-vtb__shortcut {
   opacity: 0.72;
-  font-size: 10px;
+  font-size: calc(10px * var(--ui-scale, 1));
+}
+
+.hud-vtb__seg-btn.is-active .hud-vtb__shortcut {
+  color: var(--text-on-accent);
+  opacity: 0.9;
 }

@@ -76,7 +76,20 @@ export class ViewportToolbarPanel {
           this._syncState();
         }
       }),
+      this.eventBus.on('ui:scaleChanged', () => {
+        requestAnimationFrame(() => this.syncAdaptiveWidths());
+      }),
+      this.eventBus.on('settings:appearanceChanged', () => {
+        requestAnimationFrame(() => this.syncAdaptiveWidths());
+      }),
+      this.eventBus.on('theme:applied', () => {
+        requestAnimationFrame(() => this.syncAdaptiveWidths());
+      }),
     ].filter(Boolean);
+
+    if (document.fonts?.ready) {
+      document.fonts.ready.then(() => this.syncAdaptiveWidths());
+    }
   }
 
   _getToolbarCfg() {
@@ -135,6 +148,7 @@ export class ViewportToolbarPanel {
 
   _setAdaptiveButtonWidth(btn, candidateLabels, isDropdown = false) {
     if (!btn || !Array.isArray(candidateLabels) || candidateLabels.length === 0) return;
+    const host = this.el.parentElement ?? document.body;
     const probe = document.createElement('span');
     probe.className = btn.className;
     probe.style.position = 'fixed';
@@ -142,7 +156,13 @@ export class ViewportToolbarPanel {
     probe.style.pointerEvents = 'none';
     probe.style.width = 'auto';
     probe.style.minWidth = '0';
-    document.body.appendChild(probe);
+    probe.style.maxWidth = 'none';
+    host.appendChild(probe);
+
+    const rectProbe = probe.getBoundingClientRect();
+    const scaleFactor = probe.offsetWidth > 0 && rectProbe.width > 0
+      ? rectProbe.width / probe.offsetWidth
+      : 1;
 
     let maxWidth = 0;
     for (const text of candidateLabels) {
@@ -151,12 +171,13 @@ export class ViewportToolbarPanel {
       } else {
         probe.textContent = text;
       }
-      const w = Math.ceil(probe.getBoundingClientRect().width);
+      const w = Math.ceil(probe.getBoundingClientRect().width / scaleFactor);
       if (w > maxWidth) maxWidth = w;
     }
     probe.remove();
 
     if (maxWidth > 0) {
+      btn.style.width = `${maxWidth}px`;
       btn.style.minWidth = `${maxWidth}px`;
     }
   }

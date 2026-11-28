@@ -4,10 +4,10 @@
   "viewMode": 1,
   "hudHidden": false,
   "uiScale": {
-    "value": 160,
+    "value": 100,
     "min": 80,
     "max": 160,
-    "step": 5
+    "step": 1
   },
   "animations": {
     "enabled": true,
