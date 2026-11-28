@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import defaultUiSettings from '@/config/uiSettings.json';
 
 const CLICK_DRAG_THRESHOLD_PX = 4;
 
@@ -9,7 +10,9 @@ export class SelectionTool {
     eventBus,
     batchPool = null,
     pawnManager = null,
+    inputManager = null,
     uiManager = null,
+    config = defaultUiSettings,
   }) {
     if (!sceneManager || !camera || !eventBus) {
       throw new Error('SelectionTool requires sceneManager, camera, and eventBus.');
@@ -20,14 +23,17 @@ export class SelectionTool {
     this.eventBus = eventBus;
     this.batchPool = batchPool;
     this.pawnManager = pawnManager;
+    this.inputManager = inputManager;
     this.uiManager = uiManager;
+    this.config = config;
 
     this.enabled = true;
-    this._selectedObject = null;
+    this._selectedObjects = [];
     this._raycaster = new THREE.Raycaster();
     this._ndc = new THREE.Vector2();
     this._downPos = null;
-    this._downModifiers = false;
+    this._downAlt = false;
+    this._downAdditive = false;
 
     this._maskScene = new THREE.Scene();
     this._maskMaterial = new THREE.MeshBasicMaterial({
@@ -41,23 +47,32 @@ export class SelectionTool {
     this._maskPool = [];
 
     this._unsubs = [
+      this.eventBus.on('camera:activeCameraChanged', ({ camera: nextCam } = {}) => {
+        if (nextCam) this.camera = nextCam;
+      }),
       this.eventBus.on('input:pointerdown', (e) => this._onPointerDown(e)),
       this.eventBus.on('input:pointerup', (e) => this._onPointerUp(e)),
-      this.eventBus.on('selection:requestSelect', ({ object } = {}) => {
-        this.selectObject(object ?? null);
+      this.eventBus.on('selection:requestSelect', ({ object, additive = false } = {}) => {
+        this.selectObject(object ?? null, { additive });
       }),
-      this.eventBus.on('scene:selectionChanged', ({ object } = {}) => {
-        if (object !== this._selectedObject) {
-          this._applySelection(object ?? null, false);
-        }
+      this.eventBus.on('scene:selectionChanged', ({ objects, object } = {}) => {
+        const nextList = Array.isArray(objects)
+          ? objects
+          : object
+            ? [object]
+            : [];
+        this._applySelectionList(nextList, false);
       }),
       this.eventBus.on('scene:entityRemoved', ({ id } = {}) => {
-        if (this._selectedObject?.userData?.entityId === id) {
-          this.clearSelection();
+        const filtered = this._selectedObjects.filter(
+          (o) => o && o.userData?.entityId !== id
+        );
+        if (filtered.length !== this._selectedObjects.length) {
+          this._applySelectionList(filtered, true);
         }
       }),
       this.eventBus.on('input:action:down', ({ action } = {}) => {
-        if (action === 'tool.cancel' && this._selectedObject) {
+        if (action === 'tool.cancel' && this._selectedObjects.length > 0) {
           this.clearSelection();
         }
       }),
@@ -65,11 +80,50 @@ export class SelectionTool {
   }
 
   get selectedObject() {
-    return this._selectedObject;
+    const valid = this.selectedObjects;
+    return valid[valid.length - 1] ?? null;
+  }
+
+  get selectedObjects() {
+    return this._selectedObjects.filter((o) => o && o.parent);
   }
 
   get hasSelection() {
-    return Boolean(this._selectedObject && this._selectedObject.parent);
+    return this.selectedObjects.length > 0;
+  }
+
+  get selectionCentroid() {
+    const objects = this.selectedObjects;
+    const center = new THREE.Vector3();
+    if (objects.length === 0) return center;
+    const pos = new THREE.Vector3();
+    for (const obj of objects) {
+      obj.updateWorldMatrix(true, false);
+      obj.getWorldPosition(pos);
+      center.add(pos);
+    }
+    return center.divideScalar(objects.length);
+  }
+
+  get selectionBounds() {
+    const objects = this.selectedObjects;
+    const box = new THREE.Box3();
+    if (objects.length === 0) return box;
+    for (const obj of objects) {
+      obj.updateWorldMatrix(true, true);
+      box.expandByObject(obj);
+    }
+    return box;
+  }
+
+  _isAdditiveModifierActive(e) {
+    const actionName =
+      this.config?.selection?.additiveModifierAction ?? 'selection.additive';
+    return Boolean(
+      e?.ctrlKey ||
+        e?.metaKey ||
+        this.inputManager?.isActionActive?.(actionName)
+    );
   }
 
   _canInteract() {
@@ -85,7 +139,8 @@ export class SelectionTool {
       return;
     }
     this._downPos = { x: e.x, y: e.y };
-    this._downModifiers = Boolean(e.altKey || e.ctrlKey || e.metaKey);
+    this._downAlt = Boolean(e.altKey);
+    this._downAdditive = this._isAdditiveModifierActive(e);
   }
 
   _onPointerUp(e) {
@@ -93,16 +148,17 @@ export class SelectionTool {
 
     const dx = e.x - this._downPos.x;
     const dy = e.y - this._downPos.y;
-    const wasOrbitOrChord = this._downModifiers || Boolean(e.altKey || e.ctrlKey || e.metaKey);
+    const wasOrbit = this._downAlt || Boolean(e.altKey);
+    const isAdditive = this._downAdditive || this._isAdditiveModifierActive(e);
     this._downPos = null;
 
-    if (wasOrbitOrChord || Math.hypot(dx, dy) > CLICK_DRAG_THRESHOLD_PX) {
+    if (wasOrbit || Math.hypot(dx, dy) > CLICK_DRAG_THRESHOLD_PX) {
       return;
     }
 
     if (!this._canInteract() || !e.inside) return;
 
-    this._pickAtNdc(e.ndcX, e.ndcY);
+    this._pickAtNdc(e.ndcX, e.ndcY, { additive: isAdditive });
   }
 
   _resolveEntityRoot(hitObject, batchId) {
@@ -126,7 +182,7 @@ export class SelectionTool {
     return null;
   }
 
-  _pickAtNdc(ndcX, ndcY) {
+  _pickAtNdc(ndcX, ndcY, { additive = false } = {}) {
     this._ndc.set(ndcX, ndcY);
     this._raycaster.setFromCamera(this._ndc, this.camera);
 
@@ -142,44 +198,76 @@ export class SelectionTool {
     for (const hit of hits) {
       const entityObj = this._resolveEntityRoot(hit.object, hit.batchId);
       if (entityObj) {
-        this.selectObject(entityObj);
+        this.selectObject(entityObj, { additive });
         return;
       }
     }
 
-    this.clearSelection();
+    if (!additive) {
+      this.clearSelection();
+    }
   }
 
-  selectObject(object) {
-    this._applySelection(object ?? null, true);
-  }
-
-  clearSelection() {
-    this._applySelection(null, true);
-  }
-
-  _applySelection(object, emitEvents) {
-    const next = object && object !== this.sceneManager.scene ? object : null;
-    if (this._selectedObject === next) {
+  selectObject(object, { additive = false } = {}) {
+    if (!object || object === this.sceneManager.scene) {
+      if (!additive) this.clearSelection();
       return;
     }
 
-    this._selectedObject = next;
-
-    const entityId = next?.userData?.entityId ?? null;
-    if (entityId) {
-      if (this.sceneManager.selectedId !== entityId) {
-        this.sceneManager.select(entityId);
-      }
-    } else if (this.sceneManager.selectedId !== null) {
-      this.sceneManager.clearSelection();
+    const current = this.selectedObjects;
+    let nextList;
+    if (!additive) {
+      nextList = [object];
+    } else if (current.includes(object)) {
+      nextList = current.filter((o) => o !== object);
+    } else {
+      nextList = [...current, object];
     }
 
+    this._applySelectionList(nextList, true);
+  }
+
+  clearSelection() {
+    this._applySelectionList([], true);
+  }
+
+  _applySelectionList(objects, emitEvents) {
+    const valid = [];
+    for (const obj of objects) {
+      if (obj && obj !== this.sceneManager.scene && obj.parent && !valid.includes(obj)) {
+        valid.push(obj);
+      }
+    }
+
+    const same =
+      valid.length === this._selectedObjects.length &&
+      valid.every((obj, idx) => obj === this._selectedObjects[idx]);
+    if (same) return;
+
+    this._selectedObjects = valid;
+
+    const entityIds = valid
+      .map((o) => o.userData?.entityId)
+      .filter((id) => typeof id === 'string' && id.length > 0);
+
+    if (typeof this.sceneManager.setSelection === 'function') {
+      const currentIds = [...(this.sceneManager.selectedIds ?? [])];
+      const sameIds =
+        entityIds.length === currentIds.length &&
+        entityIds.every((id, idx) => id === currentIds[idx]);
+      if (!sameIds) {
+        this.sceneManager.setSelection(entityIds);
+      }
+    }
+
+    const primary = valid[valid.length - 1] ?? null;
     if (emitEvents) {
       this.eventBus.emit('selection:changed', {
-        id: entityId,
-        object: next,
-        metadata: next?.userData?.entityMeta ?? null,
+        id: primary?.userData?.entityId ?? null,
+        object: primary,
+        metadata: primary?.userData?.entityMeta ?? null,
+        ids: entityIds,
+        objects: valid,
       });
     }
   }
@@ -202,27 +290,31 @@ export class SelectionTool {
   }
 
   renderSelectionMask(renderer, camera) {
-    const obj = this._selectedObject;
-    if (!obj || !obj.parent || !obj.visible) return false;
+    const selected = this.selectedObjects;
+    if (selected.length === 0) return false;
 
-    obj.updateWorldMatrix(true, true);
     let usedCount = 0;
 
-    const entityId = obj.userData?.entityId;
-    if (obj.userData?.isBatchedProxy && entityId && this.batchPool) {
-      const batchData = this.batchPool.getProxyRenderParts(entityId);
-      if (!batchData) return false;
+    for (const obj of selected) {
+      if (!obj || !obj.parent || !obj.visible) continue;
+      obj.updateWorldMatrix(true, true);
 
-      for (const part of batchData.parts) {
-        this._acquireMaskProxyMesh(usedCount, part.geometry, obj.matrixWorld);
-        usedCount += 1;
+      const entityId = obj.userData?.entityId;
+      if (obj.userData?.isBatchedProxy && entityId && this.batchPool) {
+        const batchData = this.batchPool.getProxyRenderParts(entityId);
+        if (!batchData) continue;
+
+        for (const part of batchData.parts) {
+          this._acquireMaskProxyMesh(usedCount, part.geometry, obj.matrixWorld);
+          usedCount += 1;
+        }
+      } else {
+        obj.traverse((node) => {
+          if (!node.isMesh || !node.geometry || !node.visible) return;
+          this._acquireMaskProxyMesh(usedCount, node.geometry, node.matrixWorld);
+          usedCount += 1;
+        });
       }
-    } else {
-      obj.traverse((node) => {
-        if (!node.isMesh || !node.geometry || !node.visible) return;
-        this._acquireMaskProxyMesh(usedCount, node.geometry, node.matrixWorld);
-        usedCount += 1;
-      });
     }
 
     if (usedCount === 0) return false;
@@ -240,6 +332,6 @@ export class SelectionTool {
     this._unsubs = [];
     this._maskPool.length = 0;
     this._maskMaterial.dispose();
-    this._selectedObject = null;
+    this._selectedObjects = [];
   }
 }

@@ -19,7 +19,7 @@ export class HierarchyPanel {
 
     this._expandedIds = new Set();
     this._autoExpandedRoots = new Set();
-    this._selectedId = null;
+    this._selectedIds = new Set();
 
     this.el = document.createElement('div');
     this.el.className = 'hud-ed__hierarchy';
@@ -49,12 +49,14 @@ export class HierarchyPanel {
       this.eventBus?.on?.('scene:entityRemoved', () => this.render()),
       this.eventBus?.on?.('scene:objectAdded', () => this.render()),
       this.eventBus?.on?.('scene:objectRemoved', () => this.render()),
-      this.eventBus?.on?.('scene:selectionChanged', ({ object } = {}) => {
-        this._selectedId = object?.uuid ?? null;
+      this.eventBus?.on?.('scene:selectionChanged', ({ objects, object } = {}) => {
+        const list = Array.isArray(objects) ? objects : object ? [object] : [];
+        this._selectedIds = new Set(list.map((o) => o?.uuid).filter(Boolean));
         this.render();
       }),
-      this.eventBus?.on?.('selection:changed', ({ object } = {}) => {
-        this._selectedId = object?.uuid ?? null;
+      this.eventBus?.on?.('selection:changed', ({ objects, object } = {}) => {
+        const list = Array.isArray(objects) ? objects : object ? [object] : [];
+        this._selectedIds = new Set(list.map((o) => o?.uuid).filter(Boolean));
         this.render();
       }),
     ].filter(Boolean);
@@ -140,7 +142,7 @@ export class HierarchyPanel {
       for (const node of nodes) {
         const hasChildren = node.children.length > 0;
         const isExpanded = hasChildren && this._expandedIds.has(node.id);
-        const isActive = this._selectedId === node.id;
+        const isActive = this._selectedIds.has(node.id);
 
         const row = document.createElement('button');
         row.type = 'button';
@@ -166,10 +168,12 @@ export class HierarchyPanel {
 
         row.append(caret, text);
 
-        row.addEventListener('click', () => {
-          this._selectedId = node.id;
-          this.eventBus?.emit?.('selection:requestSelect', { object: node.object });
-          this.render();
+        row.addEventListener('click', (e) => {
+          const additive = Boolean(e.ctrlKey || e.metaKey);
+          this.eventBus?.emit?.('selection:requestSelect', {
+            object: node.object,
+            additive,
+          });
         });
 
         row.addEventListener('dblclick', () => {

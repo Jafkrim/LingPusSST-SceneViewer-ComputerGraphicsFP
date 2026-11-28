@@ -6,6 +6,7 @@ import { ContentBrowserPanel } from './panels/contentBrowserPanel.js';
 import { EditorPanel } from './panels/editorPanel.js';
 import { ViewportGizmoPanel } from './panels/viewportGizmoPanel.js';
 import { PieMenuPanel } from './panels/pieMenuPanel.js';
+import { ViewportToolbarPanel } from './panels/viewportToolbarPanel.js';
 
 function normalizeUiScale(rawScale, baseScale = defaultUiSettings.uiScale) {
   const min = typeof rawScale?.min === 'number' ? rawScale.min : baseScale.min;
@@ -177,6 +178,13 @@ export class UIManager {
     });
     this.viewportGizmoPanel.mount(this.container);
 
+    this.viewportToolbarPanel = new ViewportToolbarPanel({
+      eventBus: this.eventBus,
+      pawnManager: this.pawnManager,
+      config: this.uiConfig,
+    });
+    this.viewportToolbarPanel.mount(this.container);
+
     this.pieMenuPanel = new PieMenuPanel({
       eventBus: this.eventBus,
       pawnManager: this.pawnManager,
@@ -184,12 +192,14 @@ export class UIManager {
       editorPanel: this.editorPanel,
       statsPanel: this.statsPanel,
       viewportGizmoPanel: this.viewportGizmoPanel,
+      viewportToolbarPanel: this.viewportToolbarPanel,
       settingsPanel: this.settingsPanel,
       config: this.uiConfig,
     });
     this.pieMenuPanel.mount(this.container);
 
     this._panelRegistry = {
+      toolbar: { panel: this.viewportToolbarPanel, key: 'toolbarVisible', animType: 'slide' },
       settings: { panel: this.settingsPanel, key: 'settingsVisible', animType: 'fade' },
       stats: { panel: this.statsPanel, key: 'statsVisible', animType: 'fade' },
       contentBrowser: { panel: this.contentBrowserPanel, key: 'contentBrowserVisible', animType: 'slide' },
@@ -208,6 +218,7 @@ export class UIManager {
     );
     this._applyHudVisibility();
 
+    this.viewportToolbarPanel?.setVisible?.(Boolean(this.uiConfig.panels.toolbarVisible ?? true));
     this.settingsPanel?.setVisible?.(Boolean(this.uiConfig.panels.settingsVisible));
     this.statsPanel?.setVisible?.(Boolean(this.uiConfig.panels.statsVisible));
     this.contentBrowserPanel?.setVisible?.(Boolean(this.uiConfig.panels.contentBrowserVisible));
@@ -337,6 +348,7 @@ export class UIManager {
           );
 
           this._applyUiScale(clamped / 100);
+          this.viewportToolbarPanel?.syncAdaptiveWidths?.();
           this._syncDockOffsets(
             this.uiConfig.panels.editorVisible ? 1 : 0,
             this.uiConfig.panels.contentBrowserVisible ? 1 : 0
@@ -357,9 +369,14 @@ export class UIManager {
     ];
   }
 
-  _syncDockOffsets(editorFactor, cbFactor) {
+  _syncDockOffsets(
+    editorFactor = this.uiConfig.panels.editorVisible ? 1 : 0,
+    cbFactor = this.uiConfig.panels.contentBrowserVisible ? 1 : 0,
+    tbFactor = this.uiConfig.panels.toolbarVisible ? 1 : 0
+  ) {
     const scale = (Number(this.uiConfig.uiScale?.value ?? 100) || 100) / 100;
     const baseEdWidth = Number(this.uiConfig.editorPanel?.widthPx ?? 300);
+    const baseTbHeight = Number(this.uiConfig.viewportToolbar?.heightPx ?? 32);
     const cbHeight =
       this.contentBrowserPanel?.el?.offsetHeight > 0
         ? this.contentBrowserPanel.el.offsetHeight
@@ -382,10 +399,14 @@ export class UIManager {
     }
 
     const cbOffset = cbHeight * cbFactor;
+    const tbOffset = baseTbHeight * scale * tbFactor;
     document.documentElement.style.setProperty('--cb-dock-offset', `${cbOffset}px`);
+    document.documentElement.style.setProperty('--tb-dock-offset', `${tbOffset}px`);
+
     this.eventBus.emit('ui:viewportLayoutChanged', {
       editorDockOffsetPx: baseEdWidth * scale * editorFactor,
       contentBrowserDockOffsetPx: cbOffset,
+      toolbarDockOffsetPx: tbOffset,
     });
   }
 
@@ -397,9 +418,10 @@ export class UIManager {
 
     const targetEd = this.uiConfig.panels.editorVisible ? 1 : 0;
     const targetCb = this.uiConfig.panels.contentBrowserVisible ? 1 : 0;
+    const targetTb = this.uiConfig.panels.toolbarVisible ? 1 : 0;
 
     if (durationMs <= 0) {
-      this._syncDockOffsets(targetEd, targetCb);
+      this._syncDockOffsets(targetEd, targetCb, targetTb);
       return;
     }
 
@@ -415,13 +437,14 @@ export class UIManager {
 
       const edFactor = panelId === 'editor' ? current : targetEd;
       const cbFactor = panelId === 'contentBrowser' ? current : targetCb;
-      this._syncDockOffsets(edFactor, cbFactor);
+      const tbFactor = panelId === 'toolbar' ? current : targetTb;
+      this._syncDockOffsets(edFactor, cbFactor, tbFactor);
 
       if (t < 1) {
         this._dockRaf = requestAnimationFrame(tick);
       } else {
         this._dockRaf = null;
-        this._syncDockOffsets(targetEd, targetCb);
+        this._syncDockOffsets(targetEd, targetCb, targetTb);
       }
     };
 
@@ -613,6 +636,7 @@ export class UIManager {
     this._unsubs = [];
     this.pieMenuPanel.dispose();
     this.viewportGizmoPanel.dispose();
+    this.viewportToolbarPanel.dispose();
     this.settingsPanel.dispose();
     this.statsPanel.dispose();
     this.contentBrowserPanel.dispose();

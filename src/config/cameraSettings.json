@@ -5,6 +5,7 @@
     "slowMultiplier": 0.25,
     "lookSpeed": 0.0022,
     "orbitSpeed": 0.005,
+    "orbitSmoothSpeed": 18,
     "panSpeed": 0.002,
     "dollySpeed": 1.12,
     "defaultFov": 60,
@@ -19,6 +20,7 @@
     "minPhiDeg": 1,
     "maxPhiDeg": 179,
     "defaultFocusDistance": 5,
+    "focusSmoothSpeed": 12,
     "fallbackPanDistance": 10,
     "rollRecoverySpeed": 10
   },

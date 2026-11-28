@@ -4,7 +4,7 @@
   "viewMode": 1,
   "hudHidden": false,
   "uiScale": {
-    "value": 100,
+    "value": 160,
     "min": 80,
     "max": 160,
     "step": 5
@@ -17,6 +17,7 @@
     "pie": true
   },
   "panels": {
+    "toolbarVisible": true,
     "settingsVisible": false,
     "statsVisible": true,
     "contentBrowserVisible": true,
@@ -92,6 +93,7 @@
   },
   "inspectorPanel": {
     "emptyText": "Select an object to inspect",
+    "multipleValueText": "Multiple",
     "transformSectionTitle": "Transform",
     "fallbackCssVar": "--accent-primary",
     "rows": [
@@ -176,27 +178,165 @@
     "labelOffsetPx": 9,
     "lineWidthPx": 2.5
   },
+  "gizmo": {
+    "mode": "none",
+    "space": "global",
+    "size": 1.15,
+    "planeOpacity": 0.28,
+    "hoverOpacity": 0.92,
+    "duplicateModifierAction": "gizmo.duplicate"
+  },
+  "cameraOptions": {
+    "projection": "perspective",
+    "defaultFov": 60,
+    "minFov": 15,
+    "maxFov": 120,
+    "defaultNear": 0.05,
+    "minNear": 0.001,
+    "maxNear": 50,
+    "defaultFar": 2000,
+    "minFar": 50,
+    "maxFar": 100000,
+    "defaultOrthoSize": 12
+  },
+  "viewportToolbar": {
+    "heightPx": 32,
+    "fileItems": [
+      {
+        "id": "new",
+        "label": "New Scene",
+        "shortcut": "Alt+N",
+        "action": "scene.new"
+      },
+      {
+        "id": "load",
+        "label": "Load Scene",
+        "shortcut": "Alt+O",
+        "action": "scene.load"
+      },
+      {
+        "id": "save",
+        "label": "Save Scene",
+        "shortcut": "Alt+S",
+        "action": "scene.save"
+      }
+    ],
+    "gizmoModes": [
+      {
+        "id": "none",
+        "label": "None",
+        "shortcut": "Q",
+        "title": "Select Only (Q)",
+        "action": "gizmo.none"
+      },
+      {
+        "id": "translate",
+        "label": "Location",
+        "shortcut": "W",
+        "title": "Location Gizmo (W)",
+        "action": "gizmo.translate"
+      },
+      {
+        "id": "rotate",
+        "label": "Rotation",
+        "shortcut": "E",
+        "title": "Rotation Gizmo (E)",
+        "action": "gizmo.rotate"
+      },
+      {
+        "id": "scale",
+        "label": "Scale",
+        "shortcut": "R",
+        "title": "Scale Gizmo (R)",
+        "action": "gizmo.scale"
+      }
+    ],
+    "controllerModes": [
+      {
+        "id": "surveyor",
+        "label": "Surveyor",
+        "shortcut": "1",
+        "action": "camera.mode.surveyor"
+      },
+      {
+        "id": "drone",
+        "label": "Drone",
+        "shortcut": "2",
+        "action": "camera.mode.drone"
+      },
+      {
+        "id": "walk",
+        "label": "Walk",
+        "shortcut": "3",
+        "action": "camera.mode.walk"
+      }
+    ],
+    "viewModes": [
+      {
+        "mode": 1,
+        "label": "Lit",
+        "shortcut": "4",
+        "action": "view.mode.1"
+      },
+      {
+        "mode": 2,
+        "label": "Unlit",
+        "shortcut": "5",
+        "action": "view.mode.2"
+      },
+      {
+        "mode": 3,
+        "label": "Wireframe",
+        "shortcut": "6",
+        "action": "view.mode.3"
+      },
+      {
+        "mode": 4,
+        "label": "Lighting",
+        "shortcut": "7",
+        "action": "view.mode.4"
+      },
+      {
+        "mode": 5,
+        "label": "Reflection",
+        "shortcut": "8",
+        "action": "view.mode.5"
+      },
+      {
+        "mode": 6,
+        "label": "Collision",
+        "shortcut": "9",
+        "action": "view.mode.6"
+      }
+    ]
+  },
   "pieMenu": {
-    "radiusPx": 116,
-    "verticalFactor": 0.64,
+    "radiusPx": 134,
+    "verticalFactor": 0.84,
+    "boxSquirclePower": 1.38,
     "deadzonePx": 22,
     "ringRadiusPx": 18,
     "edgePaddingPx": 16,
     "menus": {
       "panels": {
-        "startAngleDeg": -135,
+        "radiusPx": 156,
+        "verticalFactor": 0.84,
+        "boxSquirclePower": 1.65,
+        "startAngleDeg": -90,
         "items": [
           {
-            "id": "stats",
-            "label": "Statistics",
+            "id": "toolbar",
+            "label": "Toolbar",
+            "angleDeg": -90,
             "event": "ui:togglePanel",
             "payload": {
-              "panel": "stats"
+              "panel": "toolbar"
             }
           },
           {
             "id": "viewportGizmo",
             "label": "Gizmo",
+            "angleDeg": -18,
             "event": "ui:togglePanel",
             "payload": {
               "panel": "viewportGizmo"
@@ -205,6 +345,7 @@
           {
             "id": "editor",
             "label": "Panel",
+            "angleDeg": 54,
             "event": "ui:togglePanel",
             "payload": {
               "panel": "editor"
@@ -213,30 +354,99 @@
           {
             "id": "settings",
             "label": "Settings",
+            "angleDeg": 126,
             "event": "ui:togglePanel",
             "payload": {
               "panel": "settings"
+            }
+          },
+          {
+            "id": "stats",
+            "label": "Statistics",
+            "angleDeg": -162,
+            "event": "ui:togglePanel",
+            "payload": {
+              "panel": "stats"
             }
           }
         ]
       },
       "camera": {
-        "startAngleDeg": 180,
+        "radiusPx": 146,
+        "verticalFactor": 0.88,
+        "boxSquirclePower": 1.42,
+        "startAngleDeg": -90,
         "items": [
+          {
+            "id": "top",
+            "label": "Top",
+            "angleDeg": -90,
+            "event": "camera:setViewPreset",
+            "payload": {
+              "view": "top"
+            }
+          },
+          {
+            "id": "back",
+            "label": "Back",
+            "angleDeg": -45,
+            "event": "camera:setViewPreset",
+            "payload": {
+              "view": "back"
+            }
+          },
+          {
+            "id": "right",
+            "label": "Right",
+            "angleDeg": 0,
+            "event": "camera:setViewPreset",
+            "payload": {
+              "view": "right"
+            }
+          },
+          {
+            "id": "orthographic",
+            "label": "Orthogonal",
+            "angleDeg": 45,
+            "event": "camera:setProjection",
+            "payload": {
+              "projection": "orthographic"
+            }
+          },
+          {
+            "id": "bottom",
+            "label": "Bottom",
+            "angleDeg": 90,
+            "event": "camera:setViewPreset",
+            "payload": {
+              "view": "bottom"
+            }
+          },
           {
             "id": "perspective",
             "label": "Perspective",
+            "angleDeg": 135,
             "event": "camera:setProjection",
             "payload": {
               "projection": "perspective"
             }
           },
           {
-            "id": "orthographic",
-            "label": "Orthographic",
-            "event": "camera:setProjection",
+            "id": "left",
+            "label": "Left",
+            "angleDeg": 180,
+            "event": "camera:setViewPreset",
             "payload": {
-              "projection": "orthographic"
+              "view": "left"
+            }
+          },
+          {
+            "id": "front",
+            "label": "Front",
+            "angleDeg": -135,
+            "event": "camera:setViewPreset",
+            "payload": {
+              "view": "front"
             }
           }
         ]
@@ -247,7 +457,8 @@
     "grid": true,
     "axisX": true,
     "axisY": true,
-    "axisZ": true
+    "axisZ": true,
+    "orthoAxisTolerance": 0.999
   },
   "sceneSave": {
     "defaultDirectory": "",

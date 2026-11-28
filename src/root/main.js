@@ -18,6 +18,7 @@ import { UIManager } from '@/ui/uiManager.js';
 import { BatchPoolManager } from '@/rendering/batchPoolManager.js';
 import { SelectionTool } from '@/tools/selectionTool.js';
 import { PlacementTool } from '@/tools/placementTool.js';
+import { TransformTool } from '@/tools/transformTool.js';
 
 const CAMERA_MODE_ACTIONS = Object.freeze({
   'camera.mode.surveyor': 'surveyor',
@@ -87,15 +88,15 @@ function main() {
   });
   engine.register('sceneManager', sceneManager, 10);
 
-  const spatialIndex = new SpatialIndex({ sceneManager, eventBus });
-  engine.register('spatialIndex', spatialIndex, 15);
-
   const batchPool = new BatchPoolManager({
     scene: sceneManager.scene,
     eventBus,
   });
   sceneManager.batchPool = batchPool;
   engine.register('batchPool', batchPool, 12);
+
+  const spatialIndex = new SpatialIndex({ sceneManager, eventBus, batchPool });
+  engine.register('spatialIndex', spatialIndex, 15);
 
   const sceneSerializer = new SceneSerializer({
     sceneManager,
@@ -143,7 +144,11 @@ function main() {
   const lightingRig = new LightingRig({ scene: sceneManager.scene, eventBus });
   engine.register('lightingRig', lightingRig, 30);
 
-  const viewportGuides = new ViewportGuides({ scene: sceneManager.scene, eventBus });
+  const viewportGuides = new ViewportGuides({
+    scene: sceneManager.scene,
+    camera: pawnManager.camera,
+    eventBus,
+  });
   engine.register('viewportGuides', viewportGuides, 35);
 
   const renderPipeline = new RenderPipeline({
@@ -194,6 +199,28 @@ function main() {
     config: initialUiSettings,
   });
   engine.register('placementTool', placementTool, 116);
+
+  const transformTool = new TransformTool({
+    canvas,
+    scene: sceneManager.scene,
+    camera: pawnManager.camera,
+    eventBus,
+    selectionTool,
+    sceneManager,
+    inputManager,
+    pawnManager,
+    surveyorController,
+    uiManager,
+    config: initialUiSettings,
+  });
+  engine.register('transformTool', transformTool, 117);
+
+  eventBus.on('camera:activeCameraChanged', ({ camera: nextCam } = {}) => {
+    if (!nextCam) return;
+    renderPipeline.camera = nextCam;
+    selectionTool.camera = nextCam;
+    placementTool.camera = nextCam;
+  });
 
   // Sync viewport dimensions and redraw immediately during panel slide animations
   eventBus.on('ui:viewportLayoutChanged', () => {
@@ -335,7 +362,11 @@ function main() {
     }
 
     if (action in CAMERA_MODE_ACTIONS) {
-      pawnManager.setMode(CAMERA_MODE_ACTIONS[action]);
+      const nextMode = CAMERA_MODE_ACTIONS[action];
+      if (nextMode !== 'surveyor') {
+        selectionTool.clearSelection?.();
+      }
+      pawnManager.setMode(nextMode);
       return;
     }
 
@@ -350,15 +381,6 @@ function main() {
     if (action === 'scene.save') {
       triggerSceneSave();
       return;
-    }
-
-    if (action in CAMERA_MODE_ACTIONS) {
-      pawnManager.setMode(CAMERA_MODE_ACTIONS[action]);
-      return;
-    }
-
-    if (action in VIEW_MODE_ACTIONS) {
-      eventBus.emit('view:setMode', { mode: VIEW_MODE_ACTIONS[action], action });
     }
   });
 

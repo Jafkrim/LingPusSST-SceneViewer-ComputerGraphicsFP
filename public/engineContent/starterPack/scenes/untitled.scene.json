@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "name": "untitled",
+  "environment": null,
+  "entities": [
+    {
+      "id": "entity_15707336",
+      "name": "train_-_british_rail_class_91_power_car",
+      "logicalPath": "engineContent/starterPack/models/train_-_british_rail_class_91_power_car.glb",
+      "category": "models",
+      "transform": {
+        "position": [
+          -4.329685126282149,
+          0,
+          -5.1230085287015505
+        ],
+        "rotation": [
+          0,
+          0.4404885579317651,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "metadata": {
+        "name": "train_-_british_rail_class_91_power_car",
+        "logicalPath": "engineContent/starterPack/models/train_-_british_rail_class_91_power_car.glb",
+        "category": "models"
+      }
+    },
+    {
+      "id": "entity_b7438d36",
+      "name": "train_-_intercity_125_rail_blue_livery",
+      "logicalPath": "engineContent/starterPack/models/train_-_intercity_125_rail_blue_livery.glb",
+      "category": "models",
+      "transform": {
+        "position": [
+          2.945549559384056,
+          0,
+          -9.510772147579871
+        ],
+        "rotation": [
+          0,
+          0.5093333285472532,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "metadata": {
+        "name": "train_-_intercity_125_rail_blue_livery",
+        "logicalPath": "engineContent/starterPack/models/train_-_intercity_125_rail_blue_livery.glb",
+        "category": "models"
+      }
+    },
+    {
+      "id": "entity_d8192e34",
+      "name": "scene",
+      "logicalPath": "engineContent/starterPack/models/cc_206_ge-cm20emp_locomotive_-_pt._kai/scene.gltf",
+      "category": "models",
+      "transform": {
+        "position": [
+          -2.346312986050961,
+          4.183004379272461,
+          -0.2816456186045073
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "metadata": {
+        "name": "scene",
+        "logicalPath": "engineContent/starterPack/models/cc_206_ge-cm20emp_locomotive_-_pt._kai/scene.gltf",
+        "category": "models"
+      }
+    }
+  ]
+}

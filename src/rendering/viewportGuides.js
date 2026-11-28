@@ -12,12 +12,13 @@ function readThemeNumber(styles, token, fallback) {
 }
 
 export class ViewportGuides {
-  constructor({ scene, eventBus, config = {} }) {
+  constructor({ scene, camera = null, eventBus, config = {} }) {
     if (!scene || !eventBus) {
       throw new Error('ViewportGuides requires scene and eventBus.');
     }
 
     this.scene = scene;
+    this.camera = camera;
     this.eventBus = eventBus;
     this.visible = config.visible ?? true;
 
@@ -62,9 +63,12 @@ export class ViewportGuides {
       uAxisWidth: { value: this._axisThickness },
       uFadeStart: { value: this._fadeStart },
       uFadeEnd: { value: this._fadeEnd },
+      uPlaneMode: { value: 0 },
     };
 
     this.gridMesh = this._createInfiniteGridPlane();
+    this.orthoGridXY = this._createOrthoAxisGridPlane('xy', 'OrthoGridXY');
+    this.orthoGridYZ = this._createOrthoAxisGridPlane('yz', 'OrthoGridYZ');
     this.axesGroup = this._createInfiniteAxes({
       x: initialAxisX,
       y: initialAxisY,
@@ -72,12 +76,15 @@ export class ViewportGuides {
       opacity: initialOpacity,
     });
 
-    this.group.add(this.gridMesh, this.axesGroup);
+    this.group.add(this.gridMesh, this.orthoGridXY, this.orthoGridYZ, this.axesGroup);
     this.scene.add(this.group);
 
     this._applyGuideFlags();
 
     this._unsubs = [
+      this.eventBus.on('camera:activeCameraChanged', ({ camera: nextCam } = {}) => {
+        if (nextCam) this.camera = nextCam;
+      }),
       this.eventBus.on('theme:applied', () => this.syncThemeTokens()),
       this.eventBus.on('viewport:guidesChanged', (patch = {}) => {
         this._guideFlags = {
@@ -140,17 +147,18 @@ export class ViewportGuides {
     if (this.axisXLine) this.axisXLine.visible = Boolean(this._guideFlags.axisX);
     if (this.axisYLine) this.axisYLine.visible = Boolean(this._guideFlags.axisY);
     if (this.axisZLine) this.axisZLine.visible = Boolean(this._guideFlags.axisZ);
+    this._syncGridOrientation(this.camera);
   }
 
   _createInfiniteGridPlane() {
-    const planeSize = Math.max(1000, this._fadeEnd * 4);
+    const planeSize = Math.max(2000, this._fadeEnd * 6);
     const geometry = new THREE.PlaneGeometry(planeSize, planeSize, 1, 1);
-    geometry.rotateX(-Math.PI / 2);
 
     const material = new THREE.ShaderMaterial({
       uniforms: this._gridUniforms,
       transparent: true,
       depthWrite: false,
+      depthTest: true,
       side: THREE.DoubleSide,
       vertexShader: /* glsl */ `
         varying vec3 vWorldPos;
@@ -172,23 +180,27 @@ export class ViewportGuides {
         uniform float uMajorScale;
         uniform float uFadeStart;
         uniform float uFadeEnd;
+        uniform float uPlaneMode;
 
         float gridLineFactor(vec2 coord, float scale) {
           vec2 p = coord * scale;
-          vec2 fw = fwidth(p);
-          vec2 grid = abs(fract(p - 0.5) - 0.5) / max(fw, vec2(1e-5));
+          vec2 fw = max(fwidth(p), vec2(1e-5));
+          vec2 grid = abs(fract(p - 0.5) - 0.5) / fw;
           float line = min(grid.x, grid.y);
           return 1.0 - min(line, 1.0);
         }
 
         void main() {
-          vec2 xz = vWorldPos.xz;
-          float dist = length(xz - uCameraPos.xz);
+          vec2 planeCoord = uPlaneMode < 0.5
+            ? vWorldPos.xz
+            : (uPlaneMode < 1.5 ? vWorldPos.xy : vWorldPos.yz);
+
+          float dist = length(vWorldPos - uCameraPos);
           float distFade = 1.0 - smoothstep(uFadeStart, uFadeEnd, dist);
           if (distFade <= 0.001) discard;
 
-          float minor = gridLineFactor(xz, uMinorScale);
-          float major = gridLineFactor(xz, uMajorScale);
+          float minor = gridLineFactor(planeCoord, uMinorScale);
+          float major = gridLineFactor(planeCoord, uMajorScale);
 
           vec3 col = mix(uMinorColor, uMajorColor, major);
           float alpha = max(minor * 0.45, major * 0.85);
@@ -202,8 +214,78 @@ export class ViewportGuides {
     });
 
     const mesh = new THREE.Mesh(geometry, material);
+    mesh.rotation.set(-Math.PI * 0.5, 0, 0);
     mesh.name = 'InfiniteFloorGrid';
     mesh.renderOrder = -1;
+    mesh.frustumCulled = false;
+    return mesh;
+  }
+
+  _createOrthoAxisGridPlane(plane, name) {
+    const planeSize = Math.max(4000, this._fadeEnd * 10);
+    const geometry = new THREE.PlaneGeometry(planeSize, planeSize, 1, 1);
+
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uMinorColor: this._gridUniforms.uMinorColor,
+        uMajorColor: this._gridUniforms.uMajorColor,
+        uOpacity: this._gridUniforms.uOpacity,
+        uMinorScale: this._gridUniforms.uMinorScale,
+        uMajorScale: this._gridUniforms.uMajorScale,
+        uPlaneMode: { value: plane === 'xy' ? 1 : 2 },
+      },
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      side: THREE.DoubleSide,
+      vertexShader: /* glsl */ `
+        varying vec3 vWorldPos;
+        void main() {
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vWorldPos = worldPos.xyz;
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        precision highp float;
+        varying vec3 vWorldPos;
+
+        uniform vec3 uMinorColor;
+        uniform vec3 uMajorColor;
+        uniform float uOpacity;
+        uniform float uMinorScale;
+        uniform float uMajorScale;
+        uniform float uPlaneMode;
+
+        float gridLineFactor(vec2 coord, float scale) {
+          vec2 p = coord * scale;
+          vec2 fw = max(fwidth(p), vec2(1e-5));
+          vec2 grid = abs(fract(p - 0.5) - 0.5) / fw;
+          float line = min(grid.x, grid.y);
+          return 1.0 - min(line, 1.0);
+        }
+
+        void main() {
+          vec2 planeCoord = uPlaneMode < 1.5 ? vWorldPos.xy : vWorldPos.yz;
+          float minor = gridLineFactor(planeCoord, uMinorScale);
+          float major = gridLineFactor(planeCoord, uMajorScale);
+
+          vec3 col = mix(uMinorColor, uMajorColor, major);
+          float alpha = max(minor * 0.45, major * 0.85) * uOpacity;
+          if (alpha <= 0.002) discard;
+
+          gl_FragColor = vec4(col, alpha);
+        }
+      `,
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    if (plane === 'yz') {
+      mesh.rotation.set(0, Math.PI * 0.5, 0);
+    }
+    mesh.name = name;
+    mesh.visible = false;
+    mesh.renderOrder = -2;
     mesh.frustumCulled = false;
     return mesh;
   }
@@ -324,15 +406,57 @@ export class ViewportGuides {
     }
   }
 
+  _syncGridOrientation(camera) {
+    if (!camera || !this.gridMesh) return;
+
+    const gridEnabled = Boolean(this._guideFlags.grid);
+    const isOrtho = Boolean(camera.isOrthographicCamera);
+    const tol = Number(this._guideFlags.orthoAxisTolerance ?? 0.999);
+    const forward = this._tmpForward ?? (this._tmpForward = new THREE.Vector3());
+    camera.getWorldDirection(forward);
+
+    const ax = Math.abs(forward.x);
+    const ay = Math.abs(forward.y);
+    const az = Math.abs(forward.z);
+
+    let mode = 'floor';
+    if (isOrtho) {
+      if (ay >= tol) mode = 'xz';
+      else if (az >= tol) mode = 'xy';
+      else if (ax >= tol) mode = 'yz';
+    }
+
+    this._activeGridPlane = mode;
+    this.gridMesh.visible = gridEnabled && (mode === 'floor' || mode === 'xz');
+    if (this.orthoGridXY) this.orthoGridXY.visible = gridEnabled && mode === 'xy';
+    if (this.orthoGridYZ) this.orthoGridYZ.visible = gridEnabled && mode === 'yz';
+
+    const isTopBottomOrtho = isOrtho && mode === 'xz';
+    this._gridUniforms.uFadeStart.value = isTopBottomOrtho ? 1e6 : this._fadeStart;
+    this._gridUniforms.uFadeEnd.value = isTopBottomOrtho ? 2e6 : this._fadeEnd;
+  }
+
   update(_dt, ctx) {
     if (!this.group.visible) return;
-    const camPos = ctx?.cameraPosition;
+    const cam = ctx?.camera ?? this.camera;
+    const camPos = ctx?.cameraPosition ?? cam?.position;
+
+    this._syncGridOrientation(cam);
+
     if (camPos) {
       this._gridUniforms.uCameraPos.value.copy(camPos);
       const step = this._minorSpacing * this._majorEvery;
       const snappedX = Math.round(camPos.x / step) * step;
+      const snappedY = Math.round(camPos.y / step) * step;
       const snappedZ = Math.round(camPos.z / step) * step;
+
       this.gridMesh.position.set(snappedX, 0, snappedZ);
+      if (this.orthoGridXY?.visible) {
+        this.orthoGridXY.position.set(snappedX, snappedY, 0);
+      }
+      if (this.orthoGridYZ?.visible) {
+        this.orthoGridYZ.position.set(0, snappedY, snappedZ);
+      }
     }
   }
 
@@ -342,6 +466,10 @@ export class ViewportGuides {
     this.scene.remove(this.group);
     this.gridMesh.geometry?.dispose?.();
     this.gridMesh.material?.dispose?.();
+    this.orthoGridXY?.geometry?.dispose?.();
+    this.orthoGridXY?.material?.dispose?.();
+    this.orthoGridYZ?.geometry?.dispose?.();
+    this.orthoGridYZ?.material?.dispose?.();
     for (const geo of this._axisGeometries) geo?.dispose?.();
     for (const mat of Object.values(this._axisMaterials)) mat?.dispose?.();
   }

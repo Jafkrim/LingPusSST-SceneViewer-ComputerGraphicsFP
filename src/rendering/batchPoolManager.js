@@ -323,6 +323,38 @@ export class BatchPoolManager {
     return proxy;
   }
 
+  cloneBatchedProxy(sourceEntityId, newEntityId, { name } = {}) {
+    const record = this._proxies.get(sourceEntityId);
+    if (!record) return null;
+
+    if (this._proxies.has(newEntityId)) {
+      this.removeProxy(newEntityId);
+    }
+
+    const { proxy: srcProxy, template } = record;
+    const proxy = new THREE.Object3D();
+    proxy.name = name || newEntityId;
+    proxy.position.copy(srcProxy.position);
+    proxy.quaternion.copy(srcProxy.quaternion);
+    proxy.scale.copy(srcProxy.scale);
+    proxy.userData.isBatchedProxy = true;
+    proxy.userData.batchedLogicalPath = template.logicalPath;
+
+    const slots = [];
+    for (const batchEntry of template.batches) {
+      if (batchEntry.activeInstances.size >= batchEntry.capacity) {
+        this._growBatch(batchEntry);
+      }
+      const instanceId = batchEntry.batchedMesh.addInstance(batchEntry.geometryId);
+      batchEntry.activeInstances.set(newEntityId, instanceId);
+      slots.push({ batchEntry, instanceId });
+    }
+
+    this._proxies.set(newEntityId, { proxy, template, slots });
+    this._dirtyTransforms = true;
+    return proxy;
+  }
+
   removeProxy(entityId) {
     const record = this._proxies.get(entityId);
     if (!record) return false;
@@ -406,6 +438,25 @@ export class BatchPoolManager {
     };
   }
 
+  forEachActiveCollider(callback) {
+    if (this._proxies.size === 0) return;
+
+    for (const { proxy, template } of this._proxies.values()) {
+      if (!proxy.visible || !proxy.parent) continue;
+      proxy.updateWorldMatrix(true, false);
+
+      for (const part of template.compiledParts) {
+        const bvh = part.geometry?.boundsTree;
+        if (!bvh) continue;
+        callback({
+          bvh,
+          matrixWorld: proxy.matrixWorld,
+          boundingBox: part.geometry.boundingBox,
+        });
+      }
+    }
+  }
+
   getTemplateSnapshot(logicalPath) {
     const tpl = this._templates.get(logicalPath);
     if (!tpl) return null;
@@ -459,6 +510,34 @@ export class BatchPoolManager {
         intersects.push(hit);
       }
     };
+  }
+
+  async prewarmTemplate(logicalPath, assetResolver) {
+    if (!logicalPath || this._templates.has(logicalPath)) return;
+    const lower = logicalPath.toLowerCase();
+    if (!lower.endsWith('.glb') && !lower.endsWith('.gltf')) return;
+
+    if (!this._prewarmPromises) {
+      this._prewarmPromises = new Map();
+    }
+    if (this._prewarmPromises.has(logicalPath)) {
+      return this._prewarmPromises.get(logicalPath);
+    }
+
+    const job = (async () => {
+      try {
+        const gltf = await assetResolver.loadAsset(logicalPath);
+        await new Promise((r) => setTimeout(r, 0));
+        this._getOrCreateTemplate(logicalPath, gltf.scene);
+      } catch {
+        // Ignore prewarm failures; normal spawn handles errors
+      } finally {
+        this._prewarmPromises.delete(logicalPath);
+      }
+    })();
+
+    this._prewarmPromises.set(logicalPath, job);
+    return job;
   }
 
   dispose() {

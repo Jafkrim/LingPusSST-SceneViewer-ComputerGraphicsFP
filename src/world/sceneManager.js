@@ -27,7 +27,7 @@ export class SceneManager {
 
     this.entities = new Map();
     this.materialCache = new Map();
-    this.selectedId = null;
+    this.selectedIds = new Set();
 
     this._bindEvents();
     this.syncViewportBackdrop();
@@ -61,6 +61,14 @@ export class SceneManager {
     this.eventBus.on('scene:saved', ({ fileName, logicalPath } = {}) => {
       const target = fileName ?? logicalPath;
       if (target) this.setSceneNameFromFile(target);
+    });
+
+    this.eventBus.on('input:action:down', ({ action } = {}) => {
+      if (action === 'tool.cancel' && this.selectedIds.size > 0) {
+        this.clearSelection();
+      } else if (action === 'scene.delete' && this.selectedIds.size > 0) {
+        this.deleteSelected();
+      }
     });
   }
 
@@ -100,6 +108,54 @@ export class SceneManager {
     return object3D;
   }
 
+  duplicateEntity(sourceOrId) {
+    const sourceId = typeof sourceOrId === 'string'
+      ? sourceOrId
+      : sourceOrId?.userData?.entityId;
+    const entry = sourceId ? this.entities.get(sourceId) : null;
+    const sourceObj = entry?.object ?? (typeof sourceOrId === 'object' ? sourceOrId : null);
+    if (!sourceObj) return null;
+
+    const baseName = (sourceObj.name || 'Entity').replace(/\s*\(\d+\)$/, '');
+    let copyIndex = 1;
+    let nextName = `${baseName} (${copyIndex})`;
+    const existingNames = new Set(
+      [...this.entities.values()].map((e) => e.object?.name).filter(Boolean)
+    );
+    while (existingNames.has(nextName)) {
+      copyIndex += 1;
+      nextName = `${baseName} (${copyIndex})`;
+    }
+
+    const newId = `entity_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const nextMeta = structuredClone(entry?.metadata ?? sourceObj.userData?.entityMeta ?? {});
+    nextMeta.name = nextName;
+
+    let cloneObj = null;
+    if (sourceObj.userData?.isBatchedProxy && sourceId && this.batchPool?.cloneBatchedProxy) {
+      cloneObj = this.batchPool.cloneBatchedProxy(sourceId, newId, { name: nextName });
+    }
+
+    if (!cloneObj) {
+      cloneObj = sourceObj.clone(true);
+      cloneObj.name = nextName;
+      cloneObj.position.copy(sourceObj.position);
+      cloneObj.quaternion.copy(sourceObj.quaternion);
+      cloneObj.scale.copy(sourceObj.scale);
+      cloneObj.userData = {
+        ...structuredClone(sourceObj.userData ?? {}),
+        entityId: newId,
+        entityMeta: nextMeta,
+        isBatchedProxy: false,
+      };
+    }
+
+    this.addEntity(newId, cloneObj, nextMeta);
+    cloneObj.updateMatrixWorld(true);
+    this.batchPool?.syncTransforms?.();
+    return cloneObj;
+  }
+
   removeEntity(id) {
     const entry = this.entities.get(id);
     if (!entry) return false;
@@ -129,30 +185,83 @@ export class SceneManager {
     return this.selectedId ? this.entities.get(this.selectedId) ?? null : null;
   }
 
-  select(id) {
+  get selectedId() {
+    if (this.selectedIds.size === 0) return null;
+    let last = null;
+    for (const id of this.selectedIds) last = id;
+    return last;
+  }
+
+  get selectedEntities() {
+    const list = [];
+    for (const id of this.selectedIds) {
+      const entry = this.entities.get(id);
+      if (entry) list.push(entry);
+    }
+    return list;
+  }
+
+  _emitSelectionChanged() {
+    const entries = this.selectedEntities;
+    const objects = entries.map((e) => e.object);
+    const ids = entries.map((e) => e.id);
+    const primary = entries[entries.length - 1] ?? null;
+
+    this.eventBus.emit('scene:selectionChanged', {
+      id: primary?.id ?? null,
+      object: primary?.object ?? null,
+      metadata: primary?.metadata ?? null,
+      ids,
+      objects,
+    });
+  }
+
+  select(id, { additive = false } = {}) {
     if (id === null || id === undefined) {
       this.clearSelection();
       return;
     }
     const entry = this.entities.get(id);
-    if (!entry || this.selectedId === id) return;
+    if (!entry) return;
 
-    this.selectedId = id;
-    this.eventBus.emit('scene:selectionChanged', {
-      id,
-      object: entry.object,
-      metadata: entry.metadata,
-    });
+    if (!additive) {
+      if (this.selectedIds.size === 1 && this.selectedIds.has(id)) return;
+      this.selectedIds.clear();
+      this.selectedIds.add(id);
+    } else if (this.selectedIds.has(id)) {
+      this.selectedIds.delete(id);
+    } else {
+      this.selectedIds.add(id);
+    }
+
+    this._emitSelectionChanged();
+  }
+
+  setSelection(ids = []) {
+    this.selectedIds.clear();
+    for (const id of ids) {
+      if (this.entities.has(id)) {
+        this.selectedIds.add(id);
+      }
+    }
+    this._emitSelectionChanged();
   }
 
   clearSelection() {
-    if (this.selectedId === null) return;
-    this.selectedId = null;
-    this.eventBus.emit('scene:selectionChanged', {
-      id: null,
-      object: null,
-      metadata: null,
-    });
+    if (this.selectedIds.size === 0) return;
+    this.selectedIds.clear();
+    this._emitSelectionChanged();
+  }
+
+  deleteSelected() {
+    const toDelete = [...this.selectedIds];
+    if (toDelete.length === 0) return 0;
+    this.clearSelection();
+    let count = 0;
+    for (const id of toDelete) {
+      if (this.removeEntity(id)) count += 1;
+    }
+    return count;
   }
 
   getCachedMaterial(key, factoryFn) {

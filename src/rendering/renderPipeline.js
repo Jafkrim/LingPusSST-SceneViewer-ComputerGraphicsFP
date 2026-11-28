@@ -143,6 +143,15 @@ export class RenderPipeline {
     this.eventBus.on('render:setStyle', ({ id } = {}) => {
       if (id) this.setStyle(id);
     });
+
+    this.eventBus.on('input:action:down', ({ action } = {}) => {
+      if (typeof action === 'string' && action.startsWith('view.mode.')) {
+        const parsed = Number(action.slice('view.mode.'.length));
+        if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 6) {
+          this.eventBus.emit('view:setMode', { mode: parsed });
+        }
+      }
+    });
     this.eventBus.on('theme:applied', () => {
       const nextOutline = readSelectionOutlineStyle();
       this._outlineMaterial.uniforms.uOutlineColor.value.copy(nextOutline.color);

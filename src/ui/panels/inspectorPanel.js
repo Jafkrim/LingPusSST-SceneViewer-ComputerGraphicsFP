@@ -14,7 +14,7 @@ export class InspectorPanel {
   constructor({ eventBus, config = defaultUiSettings }) {
     this.eventBus = eventBus;
     this.config = config;
-    this._selectedObject = null;
+    this._selectedObjects = [];
     this._inputs = new Map();
     this._resetButtons = new Map();
 
@@ -25,19 +25,32 @@ export class InspectorPanel {
     this.el.className = 'hud-ed__tab-pane hud-inspector-panel';
 
     this._unsubs = [
-      this.eventBus?.on?.('selection:changed', ({ object } = {}) => {
-        this._selectedObject = object ?? null;
+      this.eventBus?.on?.('selection:changed', ({ objects, object } = {}) => {
+        this._selectedObjects = Array.isArray(objects)
+          ? objects
+          : object
+            ? [object]
+            : [];
         this.render();
       }),
-      this.eventBus?.on?.('scene:selectionChanged', ({ object } = {}) => {
-        if (this._selectedObject !== (object ?? null)) {
-          this._selectedObject = object ?? null;
+      this.eventBus?.on?.('scene:selectionChanged', ({ objects, object } = {}) => {
+        const nextList = Array.isArray(objects)
+          ? objects
+          : object
+            ? [object]
+            : [];
+        const same =
+          nextList.length === this._selectedObjects.length &&
+          nextList.every((o, i) => o === this._selectedObjects[i]);
+        if (!same) {
+          this._selectedObjects = nextList;
           this.render();
         }
       }),
       this.eventBus?.on?.('scene:entityRemoved', ({ id } = {}) => {
-        if (this._selectedObject?.userData?.entityId === id) {
-          this._selectedObject = null;
+        const next = this._selectedObjects.filter((o) => o?.userData?.entityId !== id);
+        if (next.length !== this._selectedObjects.length) {
+          this._selectedObjects = next;
           this.render();
         }
       }),
@@ -52,6 +65,10 @@ export class InspectorPanel {
         }
       }),
     ].filter(Boolean);
+  }
+
+  get _selectedObject() {
+    return this._selectedObjects.length === 1 ? this._selectedObjects[0] : null;
   }
 
   _getInspectorConfig() {
@@ -218,9 +235,9 @@ export class InspectorPanel {
     this._resetButtons.clear();
 
     const inspCfg = this._getInspectorConfig();
-    const obj = this._selectedObject;
+    const count = this._selectedObjects.length;
 
-    if (!obj) {
+    if (count === 0) {
       const blank = document.createElement('div');
       blank.className = 'hud-ed__blank';
       blank.textContent = inspCfg.emptyText;
@@ -228,12 +245,16 @@ export class InspectorPanel {
       return;
     }
 
+    const isMulti = count > 1;
+    const obj = isMulti ? null : this._selectedObjects[0];
+    const multipleLabel = inspCfg.multipleValueText ?? 'Multiple';
+
     const headerEl = document.createElement('div');
     headerEl.className = 'hud-insp__header';
 
     const nameEl = document.createElement('span');
     nameEl.className = 'hud-insp__name';
-    nameEl.textContent = obj.name || obj.type;
+    nameEl.textContent = isMulti ? `${count} objects selected` : obj.name || obj.type;
     nameEl.title = nameEl.textContent;
     headerEl.appendChild(nameEl);
 
@@ -270,8 +291,10 @@ export class InspectorPanel {
         uniformBtn.setAttribute('aria-pressed', String(this._uniformScale));
         uniformBtn.classList.toggle('is-active', this._uniformScale);
 
+        uniformBtn.disabled = isMulti;
         uniformBtn.addEventListener('click', (e) => {
           e.stopPropagation();
+          if (isMulti) return;
           this._uniformScale = !this._uniformScale;
           uniformBtn.setAttribute('aria-pressed', String(this._uniformScale));
           uniformBtn.classList.toggle('is-active', this._uniformScale);
@@ -293,36 +316,45 @@ export class InspectorPanel {
         tag.textContent = axis.label;
 
         const input = document.createElement('input');
-        input.type = 'number';
         input.className = 'hud-insp__axis-input';
-        input.step = String(rowCfg.step);
-        input.value = String(this._readAxisDisplayValue(obj, rowCfg.key, axis.index, precision));
 
-        const commitInput = () => {
-          if (!this._selectedObject) return;
-          this._writeAxisDisplayValue(
-            this._selectedObject,
-            rowCfg.key,
-            axis.index,
-            input.value,
-            precision
-          );
-          this._syncValuesFromObject();
-        };
+        if (isMulti) {
+          input.type = 'text';
+          input.value = multipleLabel;
+          input.disabled = true;
+          input.readOnly = true;
+        } else {
+          input.type = 'number';
+          input.step = String(rowCfg.step);
+          input.value = String(this._readAxisDisplayValue(obj, rowCfg.key, axis.index, precision));
 
-        input.addEventListener('change', commitInput);
-        input.addEventListener('keydown', (e) => {
-          e.stopPropagation();
-          if (e.key === 'Enter') {
-            commitInput();
-            input.blur();
-          } else if (e.key === 'Escape') {
+          const commitInput = () => {
+            if (!this._selectedObject) return;
+            this._writeAxisDisplayValue(
+              this._selectedObject,
+              rowCfg.key,
+              axis.index,
+              input.value,
+              precision
+            );
             this._syncValuesFromObject();
-            input.blur();
-          }
-        });
+          };
 
-        this._attachAxisScrubber(tag, input, rowCfg, axis.index);
+          input.addEventListener('change', commitInput);
+          input.addEventListener('keydown', (e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') {
+              commitInput();
+              input.blur();
+            } else if (e.key === 'Escape') {
+              this._syncValuesFromObject();
+              input.blur();
+            }
+          });
+
+          this._attachAxisScrubber(tag, input, rowCfg, axis.index);
+        }
+
         this._inputs.set(`${rowCfg.key}:${axis.index}`, input);
 
         box.append(tag, input);
@@ -334,7 +366,8 @@ export class InspectorPanel {
       resetBtn.className = 'hud-insp__reset-btn';
       resetBtn.title = rowCfg.resetTitle;
       resetBtn.textContent = '↺';
-      resetBtn.classList.toggle('is-default', this._isRowAtDefault(obj, rowCfg));
+      resetBtn.disabled = isMulti;
+      resetBtn.classList.toggle('is-default', isMulti || this._isRowAtDefault(obj, rowCfg));
 
       resetBtn.addEventListener('click', (e) => {
         e.stopPropagation();

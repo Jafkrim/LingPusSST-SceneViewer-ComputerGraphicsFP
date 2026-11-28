@@ -784,6 +784,15 @@ export class ContentBrowserPanel {
 
         card.append(preview, nameEl);
 
+        if (entry.kind === 'asset') {
+          card.addEventListener('pointerenter', () => {
+            this.eventBus?.emit?.('content:hoverAsset', {
+              ...entry.item,
+              category: entry.item.folder,
+            });
+          });
+        }
+
         card.addEventListener('click', (e) => this._handleCardClick(e, entry));
 
         if (entry.kind === 'asset') {

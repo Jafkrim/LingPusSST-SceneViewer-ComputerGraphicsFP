@@ -31,6 +31,7 @@ export class PieMenuPanel {
     editorPanel = null,
     statsPanel = null,
     viewportGizmoPanel = null,
+    viewportToolbarPanel = null,
     settingsPanel = null,
     config = defaultUiSettings,
   }) {
@@ -40,6 +41,7 @@ export class PieMenuPanel {
     this.editorPanel = editorPanel;
     this.statsPanel = statsPanel;
     this.viewportGizmoPanel = viewportGizmoPanel;
+    this.viewportToolbarPanel = viewportToolbarPanel;
     this.settingsPanel = settingsPanel;
     this.config = config;
 
@@ -169,32 +171,30 @@ export class PieMenuPanel {
 
   _getVisibleViewportRect() {
     const scale = this._getUiScale();
+    let top = 0;
     let right = window.innerWidth;
     let bottom = window.innerHeight;
 
+    if (this.viewportToolbarPanel?.visible && this.viewportToolbarPanel?.el) {
+      const rect = this.viewportToolbarPanel.el.getBoundingClientRect();
+      top = rect.height > 0 ? Math.max(top, rect.bottom) : Number(this.config.viewportToolbar?.heightPx ?? 32) * scale;
+    }
+
     if (this.editorPanel?.visible && this.editorPanel?.el) {
       const rect = this.editorPanel.el.getBoundingClientRect();
-      if (rect.width > 0) {
-        right = Math.min(right, rect.left);
-      } else {
-        right -= Number(this.config.editorPanel?.widthPx ?? 300) * scale;
-      }
+      right = rect.width > 0 ? Math.min(right, rect.left) : right - Number(this.config.editorPanel?.widthPx ?? 300) * scale;
     }
 
     if (this.contentBrowserPanel?.visible && this.contentBrowserPanel?.el) {
       const rect = this.contentBrowserPanel.el.getBoundingClientRect();
-      if (rect.height > 0) {
-        bottom = Math.min(bottom, rect.top);
-      } else {
-        bottom -= 270 * scale;
-      }
+      bottom = rect.height > 0 ? Math.min(bottom, rect.top) : bottom - 270 * scale;
     }
 
     return {
       left: 0,
-      top: 0,
+      top,
       right: Math.max(200, right),
-      bottom: Math.max(200, bottom),
+      bottom: Math.max(top + 200, bottom),
     };
   }
 
@@ -229,16 +229,32 @@ export class PieMenuPanel {
 
   _getEffectiveRadii(resolvedItems = this._activeItems) {
     const pieCfg = this._getPieConfig();
+    const menuDef = pieCfg.menus?.[this._activeMenuId] ?? {};
     const scale = this._getUiScale();
     const ringRadius = Number(pieCfg.ringRadiusPx ?? 18) * scale;
-    const { halfW: pillHalfW } = this._measurePillExtents();
+    const { halfW: pillHalfW, halfH: pillHalfH } = this._measurePillExtents();
 
-    let rx = Number(pieCfg.radiusPx ?? 116) * scale;
-    if (resolvedItems.length === 2) {
-      rx = Math.max(rx, pillHalfW + ringRadius + 18 * scale);
-    }
-    const ry = rx * Number(pieCfg.verticalFactor ?? 0.64);
+    const baseRx = Number(menuDef.radiusPx ?? pieCfg.radiusPx ?? 130) * scale;
+    const vFactor = Number(menuDef.verticalFactor ?? pieCfg.verticalFactor ?? 0.72);
+    const minRx = ringRadius + pillHalfW + 8 * scale;
+    const minRy = ringRadius + pillHalfH + 8 * scale;
+
+    const rx = Math.max(baseRx, minRx);
+    const ry = Math.max(rx * vFactor, minRy);
     return { rx, ry };
+  }
+
+  _computeSliceOffset(angleDeg, rx, ry, power = 1) {
+    const rad = (angleDeg * Math.PI) / 180;
+    const c = Math.cos(rad);
+    const s = Math.sin(rad);
+    if (power <= 1) {
+      return { dx: c * rx, dy: s * ry };
+    }
+    const p = 2 / power;
+    const dx = Math.sign(c) * Math.pow(Math.abs(c), p) * rx;
+    const dy = Math.sign(s) * Math.pow(Math.abs(s), p) * ry;
+    return { dx, dy };
   }
 
   _clampCenterToViewport(rawX, rawY, resolvedItems) {
@@ -249,12 +265,15 @@ export class PieMenuPanel {
     const { halfW: pillHalfW, halfH: pillHalfH } = this._measurePillExtents();
     const { rx, ry } = this._getEffectiveRadii(resolvedItems);
 
+    const menuDef = pieCfg.menus?.[this._activeMenuId] ?? {};
+    const squirclePower = Number(menuDef.boxSquirclePower ?? pieCfg.boxSquirclePower ?? 1.38);
+
     let maxExtentX = 0;
     let maxExtentY = 0;
     for (const item of resolvedItems) {
-      const rad = (item.angleDeg * Math.PI) / 180;
-      maxExtentX = Math.max(maxExtentX, Math.abs(Math.cos(rad)) * rx);
-      maxExtentY = Math.max(maxExtentY, Math.abs(Math.sin(rad)) * ry);
+      const { dx, dy } = this._computeSliceOffset(item.angleDeg, rx, ry, squirclePower);
+      maxExtentX = Math.max(maxExtentX, Math.abs(dx));
+      maxExtentY = Math.max(maxExtentY, Math.abs(dy));
     }
 
     const totalHalfW = maxExtentX + pillHalfW;
@@ -443,6 +462,9 @@ export class PieMenuPanel {
 
   _layoutItems(collapsed = false) {
     const { rx, ry } = this._getEffectiveRadii(this._activeItems);
+    const pieCfg = this._getPieConfig();
+    const menuDef = pieCfg.menus?.[this._activeMenuId] ?? {};
+    const squirclePower = Number(menuDef.boxSquirclePower ?? pieCfg.boxSquirclePower ?? 1.38);
 
     this._centerEl.style.left = `${this._centerX}px`;
     this._centerEl.style.top = `${this._centerY}px`;
@@ -451,11 +473,9 @@ export class PieMenuPanel {
     for (const item of this._activeItems) {
       const btn = this._itemEls.get(item.id);
       if (!btn) continue;
-      const rad = (item.angleDeg * Math.PI) / 180;
-      const ix = this._centerX + Math.cos(rad) * rx;
-      const iy = this._centerY + Math.sin(rad) * ry;
-      btn.style.left = `${ix}px`;
-      btn.style.top = `${iy}px`;
+      const { dx, dy } = this._computeSliceOffset(item.angleDeg, rx, ry, squirclePower);
+      btn.style.left = `${this._centerX + dx}px`;
+      btn.style.top = `${this._centerY + dy}px`;
       btn.classList.toggle('is-collapsed', collapsed);
     }
   }

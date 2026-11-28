@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
 import { TGALoader } from 'three/addons/loaders/TGALoader.js';
@@ -70,7 +72,15 @@ export class AssetResolver {
     this._dirIndex = new Map();
     this._eventSource = null;
 
+    this._assetCache = new Map();
+    this._inFlightAssets = new Map();
+
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath('/draco/');
+
     this._gltfLoader = new GLTFLoader();
+    this._gltfLoader.setDRACOLoader(dracoLoader);
+    this._gltfLoader.setMeshoptDecoder(MeshoptDecoder);
     this._hdrLoader = new HDRLoader();
     this._exrLoader = new EXRLoader();
     this._tgaLoader = new TGALoader();
@@ -120,6 +130,7 @@ export class AssetResolver {
         };
 
     this._assetIndex.clear();
+    this._assetCache.clear();
     this._dirIndex.clear();
     this._indexTree(this.manifest.tree);
 
@@ -182,46 +193,61 @@ export class AssetResolver {
       throw new Error(`File "${clean}" is not allowed inside "${meta.folder}/"`);
     }
 
+    if (this._assetCache.has(clean)) {
+      return this._assetCache.get(clean);
+    }
+
+    if (this._inFlightAssets.has(clean)) {
+      return this._inFlightAssets.get(clean);
+    }
+
     const url = `/${clean}`;
     const lower = clean.toLowerCase();
 
-    if (lower.endsWith('.glb') || lower.endsWith('.gltf')) {
-      const gltf = await this._gltfLoader.loadAsync(url);
-      this.resourceTracker?.track?.(gltf.scene, `asset:${clean}`);
-      return gltf;
-    }
-    if (lower.endsWith('.hdr')) {
-      const tex = await this._hdrLoader.loadAsync(url);
-      this.resourceTracker?.track?.(tex, `asset:${clean}`);
-      return tex;
-    }
-    if (lower.endsWith('.exr')) {
-      const tex = await this._exrLoader.loadAsync(url);
-      this.resourceTracker?.track?.(tex, `asset:${clean}`);
-      return tex;
-    }
-    if (lower.endsWith('.tga')) {
-      const tex = await this._tgaLoader.loadAsync(url);
-      this.resourceTracker?.track?.(tex, `asset:${clean}`);
-      return tex;
-    }
-    if (/\.(png|jpe?g|webp)$/i.test(lower)) {
-      const tex = await this._textureLoader.loadAsync(url);
-      this.resourceTracker?.track?.(tex, `asset:${clean}`);
-      return tex;
-    }
-    if (lower.endsWith('.bin')) {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Failed to fetch binary asset: ${url}`);
-      return res.arrayBuffer();
-    }
-    if (lower.endsWith('.prefab.json') || lower.endsWith('.scene.json')) {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Failed to fetch JSON asset: ${url}`);
-      return res.json();
-    }
+    const loadPromise = (async () => {
+      let result;
+      if (lower.endsWith('.glb') || lower.endsWith('.gltf')) {
+        const gltf = await this._gltfLoader.loadAsync(url);
+        this.resourceTracker?.track?.(gltf.scene, `asset:${clean}`);
+        result = gltf;
+      } else if (lower.endsWith('.hdr')) {
+        const tex = await this._hdrLoader.loadAsync(url);
+        this.resourceTracker?.track?.(tex, `asset:${clean}`);
+        result = tex;
+      } else if (lower.endsWith('.exr')) {
+        const tex = await this._exrLoader.loadAsync(url);
+        this.resourceTracker?.track?.(tex, `asset:${clean}`);
+        result = tex;
+      } else if (lower.endsWith('.tga')) {
+        const tex = await this._tgaLoader.loadAsync(url);
+        this.resourceTracker?.track?.(tex, `asset:${clean}`);
+        result = tex;
+      } else if (/\.(png|jpe?g|webp)$/i.test(lower)) {
+        const tex = await this._textureLoader.loadAsync(url);
+        this.resourceTracker?.track?.(tex, `asset:${clean}`);
+        result = tex;
+      } else if (lower.endsWith('.bin')) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Failed to fetch binary asset: ${url}`);
+        result = await res.arrayBuffer();
+      } else if (lower.endsWith('.prefab.json') || lower.endsWith('.scene.json')) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Failed to fetch JSON asset: ${url}`);
+        result = await res.json();
+      } else {
+        throw new Error(`Unsupported asset extension for "${clean}"`);
+      }
 
-    throw new Error(`Unsupported asset extension for "${clean}"`);
+      this._assetCache.set(clean, result);
+      return result;
+    })();
+
+    this._inFlightAssets.set(clean, loadPromise);
+    try {
+      return await loadPromise;
+    } finally {
+      this._inFlightAssets.delete(clean);
+    }
   }
 
   async saveSceneToPublic(logicalPath, sceneData) {
@@ -291,6 +317,8 @@ export class AssetResolver {
   }
 
   dispose() {
+    this._assetCache.clear();
+    this._inFlightAssets.clear();
     this._eventSource?.close?.();
     this._eventSource = null;
   }

@@ -33,11 +33,15 @@ export class SurveyorController extends BaseController {
     };
 
     this.target = null;
+    this._selectedObjects = [];
+    this.gizmoDragging = false;
 
     this._yaw = 0;
     this._pitch = 0;
     this._roll = 0;
     this._flySession = false;
+    this._focusGoal = null;
+    this._orbitGoal = null;
     this._euler = new THREE.Euler(0, 0, 0, 'YXZ');
     this._offset = new THREE.Vector3();
     this._spherical = new THREE.Spherical();
@@ -66,14 +70,46 @@ export class SurveyorController extends BaseController {
       this.eventBus.on('settings:cameraChanged', (patch = {}) => {
         if (patch.surveyor) this.configure(patch.surveyor);
       }),
-      this.eventBus.on('selection:changed', ({ target, position } = {}) => {
-        const pos = position ?? target?.position ?? null;
+      this.eventBus.on('selection:changed', ({ objects, object, target, position } = {}) => {
+        const list = Array.isArray(objects)
+          ? objects
+          : (object ?? target)
+            ? [object ?? target]
+            : [];
+        this._selectedObjects = list;
+        const pos = list.length > 1
+          ? this._resolveSelectionCentroid()
+          : (position ?? this._resolveSelectionCentroid());
         this.setTarget(pos);
         if (this.active) this._syncCursorAndLock();
       }),
+      this.eventBus.on('scene:selectionChanged', ({ objects, object } = {}) => {
+        const list = Array.isArray(objects)
+          ? objects
+          : object
+            ? [object]
+            : [];
+        this._selectedObjects = list;
+        this.setTarget(this._resolveSelectionCentroid());
+        if (this.active) this._syncCursorAndLock();
+      }),
       this.eventBus.on('selection:cleared', () => {
+        this._selectedObjects = [];
         this.clearTarget();
         if (this.active) this._syncCursorAndLock();
+      }),
+      this.eventBus.on('entity:transformUpdated', ({ target, object } = {}) => {
+        const updated = target ?? object;
+        if (updated && this._selectedObjects.includes(updated)) {
+          const pos = this._resolveSelectionCentroid();
+          if (pos) this.setTarget(pos);
+        }
+      }),
+      this.eventBus.on('camera:activeCameraChanged', ({ camera: nextCam } = {}) => {
+        if (nextCam) {
+          this.camera = nextCam;
+          this._syncAngles();
+        }
       }),
       this.eventBus.on('input:action:down', ({ action } = {}) => {
         if (!this.active) return;
@@ -112,11 +148,21 @@ export class SurveyorController extends BaseController {
         }
       }),
       this.eventBus.on('input:wheel', ({ deltaY = 0, ctrlKey = false, altKey = false } = {}) => {
-        if (!this.active || this._isFlyActive() || !this.target || deltaY === 0) return;
+        if (!this.active || this._isFlyActive() || this.gizmoDragging || deltaY === 0) return;
 
-        // Dolly near/far only when an object is selected and using Alt+Scroll or trackpad pinch (ctrlKey)
+        if (!this.target) return;
         const isAltOrPinch = this._isOrbitModifierActive() || altKey || ctrlKey;
         if (!isAltOrPinch) return;
+
+        if (this.camera.isOrthographicCamera) {
+          const factor = deltaY > 0 ? 1.12 : 1 / 1.12;
+          this.camera.left *= factor;
+          this.camera.right *= factor;
+          this.camera.top *= factor;
+          this.camera.bottom *= factor;
+          this.camera.updateProjectionMatrix();
+          return;
+        }
 
         const mult = this._getOrbitSpeedMultiplier();
         const stepFactor = Math.pow(this.config.dollySpeed, mult);
@@ -168,6 +214,15 @@ export class SurveyorController extends BaseController {
   _getOrbitSpeedMultiplier() {
     const a = this.config.actions;
     return this.inputManager.isActionActive(a.sprint) ? this.config.sprintMultiplier : 1;
+  }
+
+  _isOrbitNavigating() {
+    if (this._isFlyActive() || !this._isOrbitModifierActive()) return false;
+    const a = this.config.actions;
+    return Boolean(
+      (this.target && this.inputManager.isActionActive(a.orbitRotate)) ||
+      this.inputManager.isActionActive(a.orbitPan)
+    );
   }
 
   _isFlyActive() {
@@ -232,6 +287,7 @@ export class SurveyorController extends BaseController {
   }
 
   _pan(moveX, moveY) {
+    this._orbitGoal = null;
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
 
@@ -251,6 +307,7 @@ export class SurveyorController extends BaseController {
   }
 
   _dollyTarget(factor) {
+    this._orbitGoal = null;
     this._offset.subVectors(this.camera.position, this.target);
     const nextDist = THREE.MathUtils.clamp(
       this._offset.length() * factor,
@@ -261,20 +318,92 @@ export class SurveyorController extends BaseController {
     this.camera.position.copy(this.target).add(this._offset);
   }
 
+  _resolveObjectWorldPos(obj) {
+    if (!obj) return null;
+    obj.updateWorldMatrix(true, false);
+    const out = new THREE.Vector3();
+    return obj.getWorldPosition(out);
+  }
+
+  _resolveSelectionCentroid() {
+    const valid = this._selectedObjects.filter((o) => o && o.parent);
+    if (valid.length === 0) return null;
+    const center = new THREE.Vector3();
+    const pos = new THREE.Vector3();
+    for (const obj of valid) {
+      obj.updateWorldMatrix(true, false);
+      obj.getWorldPosition(pos);
+      center.add(pos);
+    }
+    return center.divideScalar(valid.length);
+  }
+
+  _resolveSelectionRadius(center) {
+    const valid = this._selectedObjects.filter((o) => o && o.parent);
+    if (valid.length <= 1 || !center) return 0;
+    let maxDist = 0;
+    const pos = new THREE.Vector3();
+    for (const obj of valid) {
+      obj.getWorldPosition(pos);
+      maxDist = Math.max(maxDist, pos.distanceTo(center));
+    }
+    return maxDist;
+  }
+
   _focusTarget() {
+    const latestPos = this._resolveSelectionCentroid();
+    if (latestPos) this.setTarget(latestPos);
     if (!this.target) return;
-    const dist = Math.max(
-      this.config.defaultFocusDistance,
-      this.camera.position.distanceTo(this.target)
+
+    const baseDist = Number(this.config.defaultFocusDistance ?? 5);
+    const groupRadius = this._resolveSelectionRadius(this.target);
+    const focusDist = Math.max(
+      this.config.minDistance,
+      baseDist,
+      groupRadius * 2.2
     );
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    this.camera.position.copy(this.target).addScaledVector(forward, -dist);
+    const goalPos = this.target.clone().addScaledVector(forward, -focusDist);
+
+    let goalHalfH = null;
+    if (this.camera.isOrthographicCamera) {
+      goalHalfH = focusDist * Math.tan(THREE.MathUtils.degToRad((this.camera.fov || 60) * 0.5));
+    }
+
+    this._focusGoal = { pos: goalPos, halfH: goalHalfH };
   }
 
   update(dt) {
     if (!this.active) return;
 
     const isFly = this._isFlyActive();
+
+    if (this._focusGoal) {
+      if (isFly || this._isOrbitNavigating() || this.gizmoDragging) {
+        this._focusGoal = null;
+      } else {
+        const smoothSpeed = Math.max(1, Number(this.config.focusSmoothSpeed ?? 12));
+        const alpha = 1 - Math.exp(-smoothSpeed * dt);
+        this.camera.position.lerp(this._focusGoal.pos, alpha);
+
+        if (this.camera.isOrthographicCamera && typeof this._focusGoal.halfH === 'number') {
+          const aspect = Math.max(0.01, this.camera.right / Math.max(0.01, this.camera.top));
+          const currHalfH = Math.abs(this.camera.top);
+          const nextHalfH = THREE.MathUtils.lerp(currHalfH, this._focusGoal.halfH, alpha);
+          this.camera.left = -nextHalfH * aspect;
+          this.camera.right = nextHalfH * aspect;
+          this.camera.top = nextHalfH;
+          this.camera.bottom = -nextHalfH;
+          this.camera.updateProjectionMatrix();
+        }
+
+        if (this.camera.position.distanceToSquared(this._focusGoal.pos) < 1e-5) {
+          this.camera.position.copy(this._focusGoal.pos);
+          this._focusGoal = null;
+        }
+      }
+    }
+        
     this._updateFovZoom(dt, isFly);
 
     const pinchDelta = this.inputManager.delta?.pinch ?? 0;
@@ -321,6 +450,9 @@ export class SurveyorController extends BaseController {
     }
 
     // 2. Orbit mode
+    // 2. Orbit mode
+    if (this.gizmoDragging) return;
+    if (moveX === 0 && moveY === 0) return;
     if (moveX === 0 && moveY === 0) return;
 
     if (this.inputManager.isActionActive(a.orbitRotate)) {

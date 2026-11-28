@@ -41,6 +41,11 @@ export class PlacementTool {
     this._groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
     this._unsubs = [
+      this.eventBus.on('content:hoverAsset', (item) => {
+        if (this._isPlaceableItem(item) && this.batchPool?.prewarmTemplate) {
+          this.batchPool.prewarmTemplate(item.logicalPath, this.assetResolver);
+        }
+      }),
       this.eventBus.on('content:dragStart', (payload) => this._onDragStart(payload)),
       this.eventBus.on('content:dragMove', (payload) => this._onDragMove(payload)),
       this.eventBus.on('content:dragEnd', (payload) => this._onDragEnd(payload)),

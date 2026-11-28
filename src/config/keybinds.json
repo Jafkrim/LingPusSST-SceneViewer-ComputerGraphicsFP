@@ -80,6 +80,12 @@
   "tool.select": [
     "Mouse0"
   ],
+  "selection.additive": [
+    "ControlLeft"
+  ],
+  "scene.delete": [
+    "Delete"
+  ],
   "tool.measure": [
     "KeyM"
   ],
@@ -88,6 +94,24 @@
   ],
   "tool.cancel": [
     "Escape"
+  ],
+  "gizmo.none": [
+    "KeyQ"
+  ],
+  "gizmo.translate": [
+    "KeyW"
+  ],
+  "gizmo.rotate": [
+    "KeyE"
+  ],
+  "gizmo.scale": [
+    "KeyR"
+  ],
+  "gizmo.toggleSpace": [
+    "ControlLeft+Backquote"
+  ],
+  "gizmo.duplicate": [
+    "ShiftLeft"
   ],
   "scene.new": [
     "AltLeft+KeyN"
